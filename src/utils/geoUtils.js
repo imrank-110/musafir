@@ -134,6 +134,20 @@ const URBAN_BOUNDARIES = {
   },
 };
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function isValidLatLng(lat, lng) {
+  return isFinite(lat) && isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+}
+
+function wrapLng(lng) {
+  return ((lng + 180) % 360 + 360) % 360 - 180;
+}
+
 // ─── Point-in-Polygon (Ray Casting) ──────────────────────────────────────────
 
 /**
@@ -216,43 +230,10 @@ function distanceToSegment(point, segA, segB) {
 //
 // 1. Convert lat/lng → local Cartesian (azimuthal equidistant projection)
 // 2. For each edge, compute outward normal, offset by d
-// 3. For each convex vertex, join offset edges with an arc
-//    For concave vertices, use the intersection of the offset edges
+// 3. For convex vertices: join offset edges with a circular arc
+//    For concave vertices: intersect the offset edges for a sharp corner
 // 4. Convert back to lat/lng
 // 5. Simplify using Ramer-Douglas-Peucker
-
-/**
- * Compute the initial bearing (azimuth) from point A to point B in degrees.
- */
-function bearing(lat1, lng1, lat2, lng2) {
-  const φ1 = lat1 * DEG;
-  const φ2 = lat2 * DEG;
-  const Δλ = (lng2 - lng1) * DEG;
-
-  const y = Math.sin(Δλ) * Math.cos(φ2);
-  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-  return (Math.atan2(y, x) * RAD + 360) % 360;
-}
-
-/**
- * Calculate destination point given start, bearing (degrees), and distance (km).
- * Uses the direct geodesic (haversine) formula.
- */
-function destinationPoint(lat, lng, bearingDeg, distKm) {
-  const δ = distKm / EARTH_RADIUS_KM;
-  const θ = bearingDeg * DEG;
-  const φ1 = lat * DEG;
-  const λ1 = lng * DEG;
-
-  const sinφ2 = Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(θ);
-  const φ2 = Math.asin(Math.max(-1, Math.min(1, sinφ2)));
-  const λ2 = λ1 + Math.atan2(
-    Math.sin(θ) * Math.sin(δ) * Math.cos(φ1),
-    Math.cos(δ) - Math.sin(φ1) * sinφ2
-  );
-
-  return [φ2 * RAD, ((λ2 * RAD) + 540) % 360 - 180];
-}
 
 /**
  * Convert lat/lng to local Cartesian coordinates (x, y in km) using
@@ -267,9 +248,11 @@ function latLngToCartesian(lat, lng, originLat, originLng) {
   const λ2 = lng * DEG;
   const Δλ = λ2 - λ1;
 
-  const c = Math.acos(
-    Math.sin(φ1) * Math.sin(φ2) + Math.cos(φ1) * Math.cos(φ2) * Math.cos(Δλ)
+  const cosVal = clamp(
+    Math.sin(φ1) * Math.sin(φ2) + Math.cos(φ1) * Math.cos(φ2) * Math.cos(Δλ),
+    -1, 1
   );
+  const c = Math.acos(cosVal);
 
   if (Math.abs(c) < 1e-12) return [0, 0];
 
@@ -291,33 +274,30 @@ function cartesianToLatLng(x, y, originLat, originLng) {
 
   if (Math.abs(d) < 1e-12) return [originLat, originLng];
 
-  const φ2 = Math.asin(
-    Math.cos(d) * Math.sin(φ1) + (y * Math.sin(d) * Math.cos(φ1)) / d
+  const asinVal = clamp(
+    Math.cos(d) * Math.sin(φ1) + (y * Math.sin(d) * Math.cos(φ1)) / d,
+    -1, 1
   );
+  const φ2 = Math.asin(asinVal);
 
   const λ2 = λ1 + Math.atan2(
     x * Math.sin(d),
     d * Math.cos(φ1) * Math.cos(d) - y * Math.sin(φ1) * Math.sin(d)
   );
 
-  return [φ2 * RAD, ((λ2 * RAD) + 540) % 360 - 180];
+  return [φ2 * RAD, wrapLng(λ2 * RAD)];
 }
 
 /**
  * Compute the 2D cross product of vectors (p1→p2) × (p1→p3).
- * Positive = left turn, Negative = right turn (in standard Cartesian).
  */
 function crossProduct2D(ax, ay, bx, by, cx, cy) {
-  const ux = bx - ax;
-  const uy = by - ay;
-  const vx = cx - ax;
-  const vy = cy - ay;
-  return ux * vy - uy * vx;
+  return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
 }
 
 /**
  * Determine if the polygon is wound clockwise (CW) or counter-clockwise (CCW).
- * Returns true for CW.
+ * Uses the shoelace formula. Returns true for CW.
  */
 function isClockwise(polygon) {
   let sum = 0;
@@ -345,43 +325,123 @@ function lineIntersection(p1, p2, p3, p4) {
 
   const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
 
-  return [x1 + t * (x2 - x1), y1 + t * (y2 - y1)];
+  const ix = x1 + t * (x2 - x1);
+  const iy = y1 + t * (y2 - y1);
+
+  // Check for NaN
+  if (!isFinite(ix) || !isFinite(iy)) return null;
+
+  return [ix, iy];
 }
 
 /**
  * Compute the outward normal for an edge.
  * For a CW polygon, outward is to the RIGHT of the direction of travel.
  * For a CCW polygon, outward is to the LEFT.
- * Returns [nx, ny] as a unit vector.
+ * Returns [nx, ny] as a unit vector, or null if edge is degenerate.
  */
 function outwardNormal(ax, ay, bx, by, cw) {
   const dx = bx - ax;
   const dy = by - ay;
   const len = Math.sqrt(dx * dx + dy * dy);
-  if (len < 1e-12) return [0, 0];
-  
+  if (len < 1e-12) return null;
+
   // Perpendicular: (-dy, dx) is LEFT, (dy, -dx) is RIGHT
-  // If CW, outward is RIGHT: (dy, -dx)
-  // If CCW, outward is LEFT: (-dy, dx)
   if (cw) {
-    return [dy / len, -dx / len];
+    return [dy / len, -dx / len]; // RIGHT
   } else {
-    return [-dy / len, dx / len];
+    return [-dy / len, dx / len]; // LEFT
+  }
+}
+
+/**
+ * Add arc points between two outward normals around a vertex.
+ * This creates a smooth rounded corner for convex vertices.
+ */
+function addArcPoints(result, vertex, n1, n2, radius, originLat, originLng, segments) {
+  const [vx, vy] = vertex;
+
+  // Compute the angles of the outward normals
+  const angle1 = Math.atan2(n1[1], n1[0]);
+  const angle2 = Math.atan2(n2[1], n2[0]);
+
+  // We want the exterior arc between the two normals.
+  // The exterior arc spans the larger angle (> 180° for convex).
+  // Start at angle1, sweep through the exterior to angle2.
+  let startAngle = angle1;
+  let endAngle = angle2;
+
+  // Compute the signed angular difference from startAngle to endAngle
+  let diff = endAngle - startAngle;
+  // Normalize to (-2π, 2π)
+  while (diff > 2 * Math.PI) diff -= 2 * Math.PI;
+  while (diff < -2 * Math.PI) diff += 2 * Math.PI;
+
+  // For the exterior arc, we want the angle that goes the "long way around"
+  // If |diff| <= π, we're going the short way → reverse direction
+  if (Math.abs(diff) <= Math.PI) {
+    // Take the complementary long arc
+    if (diff >= 0) {
+      diff = diff - 2 * Math.PI; // Go the other way (negative, larger magnitude)
+    } else {
+      diff = diff + 2 * Math.PI; // Go the other way (positive, larger magnitude)
+    }
+  }
+
+  // Generate arc points
+  const steps = Math.max(segments, Math.ceil(Math.abs(diff) / (Math.PI / Math.max(segments, 1))));
+  for (let s = 0; s <= steps; s++) {
+    const frac = s / steps;
+    const angle = startAngle + frac * diff;
+    const nx = Math.cos(angle);
+    const ny = Math.sin(angle);
+    const px = vx + nx * radius;
+    const py = vy + ny * radius;
+    const [lat, lng] = cartesianToLatLng(px, py, originLat, originLng);
+    if (isValidLatLng(lat, lng)) {
+      result.push([lat, lng]);
+    }
+  }
+}
+
+/**
+ * Fallback: use a simple offset around the vertex when the normal-based
+ * approach fails (e.g. parallel edges).
+ */
+function addOffsetPoint(result, vertex, n1, n2, radius, originLat, originLng) {
+  const [vx, vy] = vertex;
+  // Average the normals to get a bisector direction
+  let nx = (n1[0] + n2[0]) / 2;
+  let ny = (n1[1] + n2[1]) / 2;
+  const len = Math.sqrt(nx * nx + ny * ny);
+  if (len > 1e-12) {
+    nx /= len;
+    ny /= len;
+  } else {
+    nx = n1[0];
+    ny = n1[1];
+  }
+  const px = vx + nx * radius;
+  const py = vy + ny * radius;
+  const [lat, lng] = cartesianToLatLng(px, py, originLat, originLng);
+  if (isValidLatLng(lat, lng)) {
+    result.push([lat, lng]);
   }
 }
 
 /**
  * Buffer a polygon outward by a given distance in km.
  * Uses edge offsetting with arc joining at convex vertices.
- * 
- * The algorithm:
+ *
+ * Algorithm:
  * 1. Convert polygon to local Cartesian coordinates
  * 2. Offset each edge outward by the buffer distance
- * 3. At each vertex, compute the offset lines intersection
- * 4. If the intersection is behind the vertex (concave), just use the vertex offset point
- * 5. If the intersection is ahead (convex), use the intersection
- * 6. For convex vertices, insert arc points between the two offset edges
- * 
+ * 3. At each vertex:
+ *    - Convex (interior angle < 180°): offset edges diverge → join with circular arc
+ *    - Concave (interior angle > 180°): offset edges converge → use intersection
+ * 4. Convert back to lat/lng
+ * 5. Simplify using Ramer-Douglas-Peucker
+ *
  * @param {Array} polygon - Array of [lat, lng] pairs
  * @param {number} offsetKm - Buffer distance in km
  * @param {Array} origin - [lat, lng] for the local projection center
@@ -393,16 +453,16 @@ export function bufferPolygon(polygon, offsetKm, origin) {
   const [originLat, originLng] = origin;
 
   // Step 1: Convert to local Cartesian
-  const cartesian = polygon.map(([lat, lng]) => 
+  const cartesian = polygon.map(([lat, lng]) =>
     latLngToCartesian(lat, lng, originLat, originLng)
   );
 
   const cw = isClockwise(cartesian);
   const n = cartesian.length;
 
-  // Step 2-5: For each vertex, compute the offset corner
-  const ARC_SEGMENTS = 12; // Number of points in each arc join
+  if (n < 3) return polygon;
 
+  const ARC_SEGMENTS = 8; // Number of points in each arc join
   const result = [];
 
   for (let i = 0; i < n; i++) {
@@ -414,53 +474,80 @@ export function bufferPolygon(polygon, offsetKm, origin) {
     const n1 = outwardNormal(prev[0], prev[1], curr[0], curr[1], cw);
     const n2 = outwardNormal(curr[0], curr[1], next[0], next[1], cw);
 
+    // If either normal is null (degenerate edge), skip
+    if (!n1 || !n2) {
+      addOffsetPoint(result, curr, n1 || [0, 0], n2 || [0, 0], offsetKm, originLat, originLng);
+      continue;
+    }
+
     // Offset edges
     const p1a = [prev[0] + n1[0] * offsetKm, prev[1] + n1[1] * offsetKm];
     const p1b = [curr[0] + n1[0] * offsetKm, curr[1] + n1[1] * offsetKm];
     const p2a = [curr[0] + n2[0] * offsetKm, curr[1] + n2[1] * offsetKm];
     const p2b = [next[0] + n2[0] * offsetKm, next[1] + n2[1] * offsetKm];
 
-    // Find intersection of the two offset edges
-    const intersection = lineIntersection(p1a, p1b, p2a, p2b);
-
-    // Determine if the vertex is convex or concave relative to the polygon interior
-    // Cross product of incoming edge and outgoing edge
+    // Determine if the vertex is convex or concave using cross product
     const cross = crossProduct2D(prev[0], prev[1], curr[0], curr[1], next[0], next[1]);
-    
-    // For a CW polygon, positive cross = concave corner
-    // For a CCW polygon, negative cross = concave corner
-    const isConvex = cw ? (cross <= 0) : (cross >= 0);
 
-    if (isConvex && intersection) {
-      // Convex vertex: use the intersection and add arc points
-      const [ix, iy] = intersection;
-      const [cx, cy] = curr;
+    // For a CW polygon:
+    //   cross > 0  = left turn  → interior is convex? No...
+    // Let's think: In a CW polygon, the interior is on the RIGHT.
+    // A right turn (negative cross) means the interior angle < 180° (convex).
+    // A left turn (positive cross) means the interior angle > 180° (concave).
+    //
+    // For a CCW polygon, interior is on the LEFT.
+    // A left turn (positive cross) means interior angle < 180° (convex).
+    // A right turn (negative cross) means interior angle > 180° (concave).
 
-      // Check distance from intersection to original vertex
-      const distI = Math.sqrt((ix - cx) ** 2 + (iy - cy) ** 2);
-      
-      if (distI > offsetKm * 0.5 && distI < offsetKm * 5) {
-        // Normal case: use intersection as the corner
-        result.push(cartesianToLatLng(ix, iy, originLat, originLng));
-      } else {
-        // Unreasonable intersection: use arc around the vertex
-        addArcPoints(result, curr, n1, n2, offsetKm, originLat, originLng, ARC_SEGMENTS);
-      }
-    } else {
-      // Concave vertex: generate a circular arc around it
+    const isConvex = cw ? (cross < 0) : (cross > 0);
+
+    if (isConvex) {
+      // Convex vertex: offset edges DIVERGE
+      // Join the offset edges with a circular arc around the vertex
       addArcPoints(result, curr, n1, n2, offsetKm, originLat, originLng, ARC_SEGMENTS);
+    } else {
+      // Concave vertex: offset edges CONVERGE
+      // Use the intersection of the offset edges for a sharp corner
+      const intersection = lineIntersection(p1a, p1b, p2a, p2b);
+
+      if (intersection) {
+        const [ix, iy] = intersection;
+        const distI = Math.sqrt((ix - curr[0]) ** 2 + (iy - curr[1]) ** 2);
+
+        // Sanity check: intersection should be at a reasonable distance
+        if (distI < offsetKm * 10) {
+          const [lat, lng] = cartesianToLatLng(ix, iy, originLat, originLng);
+          if (isValidLatLng(lat, lng)) {
+            result.push([lat, lng]);
+          } else {
+            // Fallback to arc
+            addArcPoints(result, curr, n1, n2, offsetKm, originLat, originLng, ARC_SEGMENTS);
+          }
+        } else {
+          // Unreasonable intersection, fallback to arc
+          addArcPoints(result, curr, n1, n2, offsetKm, originLat, originLng, ARC_SEGMENTS);
+        }
+      } else {
+        // Parallel offset edges — just offset the vertex along the bisector
+        addOffsetPoint(result, curr, n1, n2, offsetKm, originLat, originLng);
+      }
     }
   }
 
-  // Step 6: Simplify using Ramer-Douglas-Peucker
-  const simplified = simplifyPolygon(result, 0.5); // 0.5 km tolerance
-
-  // Ensure we have a valid polygon (at least 3 points, closed)
-  if (simplified.length < 3) {
-    return result; // Fall back to un-simplified
+  if (result.length < 3) {
+    // Fallback: if buffering failed, return the original polygon (no buffer)
+    return polygon;
   }
 
-  // Ensure the polygon is closed (first point = last point)
+  // Step 6: Simplify using Ramer-Douglas-Peucker
+  const simplified = simplifyPolygon(result, 1.0); // 1.0 km tolerance
+
+  // Ensure we have a valid polygon
+  if (simplified.length < 3) {
+    return result;
+  }
+
+  // Ensure the polygon is closed
   const first = simplified[0];
   const last = simplified[simplified.length - 1];
   if (Math.abs(first[0] - last[0]) > 0.0001 || Math.abs(first[1] - last[1]) > 0.0001) {
@@ -471,61 +558,9 @@ export function bufferPolygon(polygon, offsetKm, origin) {
 }
 
 /**
- * Add arc points between two outward normals around a vertex.
- * This creates a smooth rounded corner.
- */
-function addArcPoints(result, vertex, n1, n2, radius, originLat, originLng, segments) {
-  const [vx, vy] = vertex;
-
-  // Compute the start and end angles of the outward normals
-  const angle1 = Math.atan2(n1[1], n1[0]);
-  const angle2 = Math.atan2(n2[1], n2[0]);
-
-  // Determine the arc direction (we want the exterior arc)
-  let startAngle = angle1;
-  let endAngle = angle2;
-
-  // Calculate the angle difference
-  let diff = endAngle - startAngle;
-  // Normalize to [-π, π]
-  while (diff > Math.PI) diff -= 2 * Math.PI;
-  while (diff < -Math.PI) diff += 2 * Math.PI;
-
-  // For convex vertices, the exterior arc goes in the direction away from interior
-  // The normals should point outward, so we take the arc that covers > 180° if needed
-  // Actually, for convex corners, the exterior angle is > 180° (the interior angle < 180°)
-  // The outward normals sweep the exterior angle
-  if (diff < 0) {
-    // Sweep from angle2 to angle1 (the other way)
-    [startAngle, endAngle] = [angle2, angle1];
-    diff = -diff;
-  }
-
-  // If the angle is tiny, just add one point
-  if (diff < 0.01) {
-    const offsetX = vx + n1[0] * radius;
-    const offsetY = vy + n1[1] * radius;
-    result.push(cartesianToLatLng(offsetX, offsetY, originLat, originLng));
-    return;
-  }
-
-  // Add points along the arc
-  const steps = Math.max(segments, Math.ceil(diff / (Math.PI / segments)));
-  for (let s = 0; s <= steps; s++) {
-    const frac = s / steps;
-    const angle = startAngle + frac * diff;
-    const nx = Math.cos(angle);
-    const ny = Math.sin(angle);
-    const px = vx + nx * radius;
-    const py = vy + ny * radius;
-    result.push(cartesianToLatLng(px, py, originLat, originLng));
-  }
-}
-
-/**
  * Ramer-Douglas-Peucker polygon simplification.
  * Reduces the number of points while preserving shape.
- * 
+ *
  * @param {Array} points - Array of [lat, lng] pairs
  * @param {number} epsilon - Maximum allowed deviation in km
  * @returns {Array} Simplified points
@@ -533,7 +568,6 @@ function addArcPoints(result, vertex, n1, n2, radius, originLat, originLng, segm
 export function simplifyPolygon(points, epsilon) {
   if (points.length <= 2) return points;
 
-  // Find the point with the maximum distance from the line between first and last
   const [firstLat, firstLng] = points[0];
   const [lastLat, lastLng] = points[points.length - 1];
 
@@ -549,7 +583,6 @@ export function simplifyPolygon(points, epsilon) {
     }
   }
 
-  // If max distance is greater than epsilon, recursively simplify
   if (maxDist > epsilon) {
     const left = simplifyPolygon(points.slice(0, maxIdx + 1), epsilon);
     const right = simplifyPolygon(points.slice(maxIdx), epsilon);
@@ -563,8 +596,6 @@ export function simplifyPolygon(points, epsilon) {
  * Perpendicular distance from a point to a line segment in km.
  */
 function perpendicularDistanceKm(lat, lng, lat1, lng1, lat2, lng2) {
-  // Use the cross product method in Cartesian space
-  // We need a local projection for accuracy
   const originLat = (lat1 + lat2) / 2;
   const originLng = (lng1 + lng2) / 2;
 
@@ -590,40 +621,14 @@ function perpendicularDistanceKm(lat, lng, lat1, lng1, lat2, lng2) {
 }
 
 /**
- * Check if a polygon is self-intersecting (has a bow-tie shape).
- * Returns true if clean, false if self-intersecting.
- */
-function isPolygonValid(polygon) {
-  const n = polygon.length;
-  for (let i = 0; i < n; i++) {
-    const [x1, y1] = polygon[i];
-    const [x2, y2] = polygon[(i + 1) % n];
-    for (let j = i + 2; j < n; j++) {
-      if (j === (i + 1) % n || (j + 1) % n === i) continue;
-      const [x3, y3] = polygon[j];
-      const [x4, y4] = polygon[(j + 1) % n];
-      if (segmentsIntersect(x1, y1, x2, y2, x3, y3, x4, y4)) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-/**
  * Check if two line segments intersect (excluding shared endpoints).
- * Uses orientation test.
  */
 function segmentsIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
   const o1 = crossProduct2D(x1, y1, x2, y2, x3, y3);
   const o2 = crossProduct2D(x1, y1, x2, y2, x4, y4);
   const o3 = crossProduct2D(x3, y3, x4, y4, x1, y1);
   const o4 = crossProduct2D(x3, y3, x4, y4, x2, y2);
-
-  // General case (excluding collinear)
-  if (o1 * o2 < 0 && o3 * o4 < 0) return true;
-
-  return false;
+  return o1 * o2 < 0 && o3 * o4 < 0;
 }
 
 // ─── Main Qasr Status Functions ──────────────────────────────────────────────
@@ -647,7 +652,7 @@ export function getSupportedCities() {
  */
 export function isInsideUrfBoundary(lat, lng, cityName) {
   const city = URBAN_BOUNDARIES[cityName];
-  if (!city) return null; // Unknown city
+  if (!city) return null;
   return pointInPolygon([lat, lng], city.boundary);
 }
 
@@ -660,20 +665,13 @@ function isBeyondHadd(lat, lng, cityName) {
   if (!city) return false;
 
   const buffered = generateHaddBoundary(cityName);
-  if (!buffered) return false;
+  if (!buffered || buffered.length < 3) return false;
 
-  // If the point is inside the buffered polygon, it has NOT reached Hadd al-Tarakhkhus
-  // If it's outside, it HAS reached it
   return !pointInPolygon([lat, lng], buffered);
 }
 
 /**
  * Calculate the Qasr status for a given location.
- * 
- * @param {number} lat - Latitude
- * @param {number} lng - Longitude
- * @param {string} cityName - City name for 'Urf boundary lookup
- * @returns {Object} { isInsideUrf, distanceFromBoundary, isOutsideHadd, status }
  */
 export function calculateQasrStatus(lat, lng, cityName) {
   const city = URBAN_BOUNDARIES[cityName];
@@ -689,12 +687,8 @@ export function calculateQasrStatus(lat, lng, cityName) {
 
   const inside = pointInPolygon([lat, lng], city.boundary);
   const distToBoundary = distanceToPolygonBoundary([lat, lng], city.boundary);
-
-  // If inside the 'Urf boundary, distance is negative (how far inside)
-  // If outside, distance is positive (how far outside)
   const signedDist = inside ? -distToBoundary : distToBoundary;
 
-  // Use the buffered polygon for Hadd al-Tarakhkhus check
   const outsideHadd = isBeyondHadd(lat, lng, cityName);
 
   let status;
@@ -727,16 +721,61 @@ export function calculateQasrStatus(lat, lng, cityName) {
 
 /**
  * Generate the Hadd al-Tarakhkhus boundary polygon.
- * This is now computed using the true polygon buffering algorithm
- * (Minkowski sum) rather than a circle approximation.
- * The algorithm offsets every edge of the 'Urf boundary outward
- * by exactly 22 km and joins the offset edges with arcs.
+ * Now computed using the true polygon buffering algorithm.
  */
 export function generateHaddBoundary(cityName) {
   const city = URBAN_BOUNDARIES[cityName];
   if (!city) return null;
 
-  return bufferPolygon(city.boundary, HADD_AL_TARAKHKHUS_KM, city.center);
+  try {
+    const buffered = bufferPolygon(city.boundary, HADD_AL_TARAKHKHUS_KM, city.center);
+    if (!buffered || buffered.length < 3) {
+      // Fallback: return a circle approximation
+      const maxDist = Math.max(
+        ...city.boundary.map(([lat, lng]) =>
+          haversineDistance(city.center[0], city.center[1], lat, lng)
+        )
+      );
+      return generateRadiusCircle(city.center[0], city.center[1], maxDist + HADD_AL_TARAKHKHUS_KM);
+    }
+    return buffered;
+  } catch (e) {
+    // Fallback on error
+    const maxDist = Math.max(
+      ...city.boundary.map(([lat, lng]) =>
+        haversineDistance(city.center[0], city.center[1], lat, lng)
+      )
+    );
+    return generateRadiusCircle(city.center[0], city.center[1], maxDist + HADD_AL_TARAKHKHUS_KM);
+  }
+}
+
+/**
+ * Generate a circle of points around a center at a given radius.
+ * Used as fallback for the Hadd al-Tarakhkhus boundary.
+ */
+function generateRadiusCircle(centerLat, centerLng, radiusKm, numPoints = 64) {
+  const points = [];
+  for (let i = 0; i < numPoints; i++) {
+    const bearing = (360 / numPoints) * i;
+    const brng = bearing * DEG;
+    const d = radiusKm / EARTH_RADIUS_KM;
+    const φ1 = centerLat * DEG;
+    const λ1 = centerLng * DEG;
+
+    const sinVal = clamp(
+      Math.sin(φ1) * Math.cos(d) + Math.cos(φ1) * Math.sin(d) * Math.cos(brng),
+      -1, 1
+    );
+    const φ2 = Math.asin(sinVal);
+    const λ2 = λ1 + Math.atan2(
+      Math.sin(brng) * Math.sin(d) * Math.cos(φ1),
+      Math.cos(d) - Math.sin(φ1) * sinVal
+    );
+
+    points.push([φ2 * RAD, wrapLng(λ2 * RAD)]);
+  }
+  return points;
 }
 
 /**
