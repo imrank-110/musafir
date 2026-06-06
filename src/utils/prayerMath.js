@@ -1,0 +1,272 @@
+/**
+ * prayerMath.js — Solar Calculation Engine
+ * 
+ * Implements the University of Tehran (Institute of Geophysics) parameters
+ * for Ayatollah Sistani's rulings:
+ *   Fajr:   17.7° below horizon
+ *   Maghrib: 4.5° below horizon
+ *   Isha:   14.0° below horizon
+ * 
+ * Includes altitude correction for high-altitude flight.
+ */
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const DEG = Math.PI / 180;
+const RAD = 180 / Math.PI;
+
+const TEHRAN_ANGLES = {
+  fajr: 17.7,
+  maghrib: 4.5,
+  isha: 14.0,
+};
+
+const EARTH_RADIUS_KM = 6371;
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function sin(d) { return Math.sin(d * DEG); }
+function cos(d) { return Math.cos(d * DEG); }
+function tan(d) { return Math.tan(d * DEG); }
+function asin(x) { return Math.asin(x) * RAD; }
+function acos(x) { return Math.acos(x) * RAD; }
+function atan2(y, x) { return Math.atan2(y, x) * RAD; }
+
+function fixHour(a) {
+  let h = a;
+  while (h < 0) h += 24;
+  while (h >= 24) h -= 24;
+  return h;
+}
+
+function fixAngle(a) {
+  let d = a;
+  while (d < -180) d += 360;
+  while (d > 180) d -= 360;
+  return d;
+}
+
+function dhuhrMinutes(julianDay, longitude, timezone) {
+  // Equation of time
+  const n = julianDay - 2451545.0;
+  let g = fixAngle(357.529 + 0.98560028 * n);
+  let q = fixAngle(280.459 + 0.98564736 * n);
+  let L = fixAngle(q + 1.915 * sin(g) + 0.020 * sin(2 * g));
+
+  const e = 23.439 - 0.00000036 * n;
+  const RA = atan2(sin(L) * cos(e), cos(L)) / 15;
+  const EqT = q / 15 - fixHour(RA);
+  const noon = 12 + EqT;
+  return noon - longitude / 15 - timezone;
+}
+
+function sunDeclination(julianDay) {
+  const n = julianDay - 2451545.0;
+  let g = fixAngle(357.529 + 0.98560028 * n);
+  let q = fixAngle(280.459 + 0.98564736 * n);
+  let L = fixAngle(q + 1.915 * sin(g) + 0.020 * sin(2 * g));
+  const e = 23.439 - 0.00000036 * n;
+  return asin(sin(e) * sin(L));
+}
+
+// ─── Altitude Correction ─────────────────────────────────────────────────────
+// At altitude, the visible horizon dips, shifting prayer times.
+// The dip angle (in degrees) = acos(R / (R + h)) where R = Earth radius, h = altitude.
+// This effectively reduces the twilight angle for Fajr (makes it earlier)
+// and increases it for Maghrib (makes it later).
+
+function altitudeDipAngle(altitudeMeters) {
+  if (!altitudeMeters || altitudeMeters <= 0) return 0;
+  const r = EARTH_RADIUS_KM * 1000;
+  return acos(r / (r + altitudeMeters));
+}
+
+function correctedAngle(baseAngle, altitudeMeters, isFajr) {
+  const dip = altitudeDipAngle(altitudeMeters);
+  // For Fajr: the sun needs to be LESS below horizon (higher) because horizon dips
+  // For Maghrib: the sun needs to be MORE below horizon (lower) because horizon dips
+  if (isFajr) {
+    return Math.max(baseAngle - dip, 0);
+  }
+  return baseAngle + dip;
+}
+
+// ─── Main Prayer Time Calculator ─────────────────────────────────────────────
+
+/**
+ * Calculate prayer times for a given date, location, and altitude.
+ * 
+ * @param {Date} date - JavaScript Date object
+ * @param {number} lat - Latitude in degrees
+ * @param {number} lng - Longitude in degrees
+ * @param {number} timezone - Timezone offset from UTC (e.g., -5 for EST)
+ * @param {number} altitudeMeters - Altitude in meters (0 for ground)
+ * @returns {Object} { fajr, sunrise, dhuhr, asr, maghrib, isha, midnight }
+ *   All times are in hours (0-24) local time.
+ */
+export function calculatePrayerTimes(date, lat, lng, timezone, altitudeMeters = 0) {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+
+  // Julian Day
+  const a = Math.floor((14 - month) / 12);
+  const y = year + 4800 - a;
+  const m = month + 12 * a - 3;
+  let jd = day + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - Math.floor(y / 79) - 32083;
+  // For Gregorian
+  jd = jd - Math.floor((y - 1) / 100) + Math.floor((y - 1) / 400) + 2;
+
+  const dhuhrBase = dhuhrMinutes(jd, lng, timezone);
+  const dhuhr = fixHour(dhuhrBase);
+
+  const dec = sunDeclination(jd);
+  const noon = dhuhrBase - 12; // solar noon in hours from local midnight
+
+  // Hour angle formula: cos(ha) = (sin(angle) - sin(lat)*sin(dec)) / (cos(lat)*cos(dec))
+  function hourAngle(angle) {
+    const numerator = sin(angle) - sin(lat) * sin(dec);
+    const denominator = cos(lat) * cos(dec);
+    if (Math.abs(denominator) < 1e-10) return NaN;
+    const val = numerator / denominator;
+    if (val > 1 || val < -1) return NaN;
+    return acos(val) / 15;
+  }
+
+  // Sunrise / Sunset (angle = -0.833° for atmospheric refraction at sea level)
+  const sunriseAngle = -0.833 - altitudeDipAngle(altitudeMeters);
+  const sunriseHA = hourAngle(sunriseAngle);
+  const sunrise = fixHour(dhuhrBase - sunriseHA);
+  const sunset = fixHour(dhuhrBase + sunriseHA);
+
+  // Fajr (with altitude correction)
+  const fajrAngle = correctedAngle(TEHRAN_ANGLES.fajr, altitudeMeters, true);
+  const fajrHA = hourAngle(-fajrAngle);
+  const fajr = fixHour(dhuhrBase - fajrHA);
+
+  // Maghrib (with altitude correction)
+  const maghribAngle = correctedAngle(TEHRAN_ANGLES.maghrib, altitudeMeters, false);
+  const maghribHA = hourAngle(-maghribAngle);
+  const maghrib = fixHour(dhuhrBase + maghribHA);
+
+  // Isha
+  const ishaAngle = TEHRAN_ANGLES.isha;
+  const ishaHA = hourAngle(-ishaAngle);
+  const isha = fixHour(dhuhrBase + ishaHA);
+
+  // Asr (shadow length = 1, standard for Shia)
+  // asr = dhuhr + ha_asr, where ha_asr = acos((sin(arc) - sin(lat)*sin(dec)) / (cos(lat)*cos(dec))) / 15
+  // arc = atan(1 / (tan(|lat - dec|) + 1))
+  const A = Math.abs(lat - dec);
+  const arc = atan2(1, tan(A) + 1);
+  const asrNumerator = sin(arc) - sin(lat) * sin(dec);
+  const asrDenominator = cos(lat) * cos(dec);
+  let asrHA = NaN;
+  if (Math.abs(asrDenominator) > 1e-10) {
+    const asrVal = asrNumerator / asrDenominator;
+    if (asrVal >= -1 && asrVal <= 1) {
+      asrHA = acos(asrVal) / 15;
+    }
+  }
+  const asr = fixHour(dhuhrBase + (isNaN(asrHA) ? 0 : asrHA));
+
+  // Midnight (midpoint between sunset and sunrise)
+  let midnight = fixHour(sunset + (sunrise + 24 - sunset) / 2);
+
+  return {
+    fajr: fixHour(fajr),
+    sunrise: fixHour(sunrise),
+    dhuhr: fixHour(dhuhr),
+    asr: fixHour(asr),
+    maghrib: fixHour(maghrib),
+    isha: fixHour(isha),
+    midnight: fixHour(midnight),
+  };
+}
+
+/**
+ * Convert decimal hours to "HH:MM" string.
+ */
+export function hoursToTimeString(hours) {
+  if (hours == null || isNaN(hours)) return '--:--';
+  const h = Math.floor(hours);
+  const m = Math.floor((hours - h) * 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Get the current prayer window info.
+ * Returns which prayer is active, when it started, when it ends, and countdown.
+ */
+export function getCurrentPrayerInfo(prayerTimes, nowHours) {
+  const order = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
+  const labels = {
+    fajr: 'Fajr',
+    sunrise: 'Sunrise',
+    dhuhr: 'Dhuhr',
+    asr: 'Asr',
+    maghrib: 'Maghrib',
+    isha: 'Isha',
+  };
+
+  // Build array of { time, name, label }
+  const events = order.map((key) => ({
+    time: prayerTimes[key],
+    name: key,
+    label: labels[key],
+  }));
+
+  // Find current and next
+  let current = null;
+  let next = null;
+
+  for (let i = 0; i < events.length; i++) {
+    const evt = events[i];
+    const nextEvt = events[i + 1] || { time: events[0].time + 24, name: events[0].name, label: events[0].label };
+
+    if (nowHours >= evt.time && nowHours < nextEvt.time) {
+      current = evt;
+      next = nextEvt;
+      break;
+    }
+  }
+
+  // Handle after isha (before midnight)
+  if (!current) {
+    const lastEvent = events[events.length - 1];
+    if (nowHours >= lastEvent.time) {
+      current = lastEvent;
+      next = { time: events[0].time + 24, name: events[0].name, label: events[0].label };
+    } else {
+      // Before fajr
+      current = { time: events[events.length - 1].time - 24, name: events[events.length - 1].name, label: events[events.length - 1].label };
+      next = events[0];
+    }
+  }
+
+  const timeUntilNext = next ? (next.time - nowHours) * 3600 : 0;
+  const windowElapsed = current ? (nowHours - current.time) * 3600 : 0;
+  const windowDuration = next ? (next.time - current.time) * 3600 : 0;
+
+  return {
+    current,
+    next,
+    timeUntilNext: Math.max(0, timeUntilNext),
+    windowElapsed: Math.max(0, windowElapsed),
+    windowDuration: Math.max(0, windowDuration),
+  };
+}
+
+/**
+ * Calculate prayer times along a flight path at a given moment.
+ * @param {number} lat - Current latitude
+ * @param {number} lng - Current longitude
+ * @param {number} altitudeMeters - Current altitude
+ * @param {Date} date - Current date/time
+ * @returns {Object} prayer times
+ */
+export function calculateFlightPrayerTimes(lat, lng, altitudeMeters, date) {
+  // Estimate timezone from longitude
+  const tz = Math.round(lng / 15);
+  return calculatePrayerTimes(date, lat, lng, tz, altitudeMeters);
+}
