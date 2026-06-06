@@ -727,26 +727,38 @@ export function generateHaddBoundary(cityName) {
   const city = URBAN_BOUNDARIES[cityName];
   if (!city) return null;
 
-  try {
-    const buffered = bufferPolygon(city.boundary, HADD_AL_TARAKHKHUS_KM, city.center);
-    if (!buffered || buffered.length < 3) {
-      // Fallback: return a circle approximation
-      const maxDist = Math.max(
-        ...city.boundary.map(([lat, lng]) =>
-          haversineDistance(city.center[0], city.center[1], lat, lng)
-        )
-      );
-      return generateRadiusCircle(city.center[0], city.center[1], maxDist + HADD_AL_TARAKHKHUS_KM);
-    }
-    return buffered;
-  } catch (e) {
-    // Fallback on error
+  // Helper: compute the fallback circle boundary
+  function fallbackCircle() {
     const maxDist = Math.max(
       ...city.boundary.map(([lat, lng]) =>
         haversineDistance(city.center[0], city.center[1], lat, lng)
       )
     );
     return generateRadiusCircle(city.center[0], city.center[1], maxDist + HADD_AL_TARAKHKHUS_KM);
+  }
+
+  // Helper: validate that EVERY point in the polygon is a valid LatLng
+  function isValidPolygon(poly) {
+    if (!poly || poly.length < 3) return false;
+    for (const [lat, lng] of poly) {
+      if (!isFinite(lat) || !isFinite(lng)) return false;
+      if (lat < -90 || lat > 90) return false;
+      if (lng < -180 || lng > 180) return false;
+    }
+    return true;
+  }
+
+  try {
+    const buffered = bufferPolygon(city.boundary, HADD_AL_TARAKHKHUS_KM, city.center);
+    if (isValidPolygon(buffered)) {
+      return buffered;
+    }
+    // If buffer produced invalid points, fall back to circle
+    console.warn('Polygon buffer produced invalid points, falling back to circle approximation');
+    return fallbackCircle();
+  } catch (e) {
+    console.warn('Polygon buffer failed, falling back to circle approximation:', e);
+    return fallbackCircle();
   }
 }
 
