@@ -6,7 +6,7 @@ import {
   getSupportedCities,
   getUrfBoundary,
   generateUrfPolygon,
-  generateHaddBoundary,
+  getHaddCircleParams,
   haversineDistance,
   HADD_AL_TARAKHKHUS_KM,
 } from '../utils/geoUtils';
@@ -387,7 +387,7 @@ export default function QasrMap() {
 
   // Generate map overlays
   const urfPolygon = cityName ? generateUrfPolygon(cityName) : null;
-  const haddBoundary = cityName ? generateHaddBoundary(cityName) : null;
+  const haddCircle = cityName ? getHaddCircleParams(cityName) : null;
 
   // Determine colors based on status
   const getStatusColors = () => {
@@ -519,16 +519,17 @@ export default function QasrMap() {
                   </Polygon>
                 )}
 
-                {/* Hadd al-Tarakhkhus Boundary (22 km) */}
-                {haddBoundary && (
-                  <Polygon
-                    positions={haddBoundary}
+                {/* Hadd al-Tarakhkhus Boundary (22 km) — rendered as a Leaflet Circle */}
+                {haddCircle && (
+                  <Circle
+                    center={haddCircle.center}
+                    radius={haddCircle.radiusMeters}
                     pathOptions={{
-                      color: haddColor,
-                      weight: 2,
-                      fillColor: haddColor,
-                      fillOpacity: 0.08,
-                      dashArray: '8, 8',
+                      color: '#10b981',
+                      weight: 4,
+                      fillColor: '#10b981',
+                      fillOpacity: 0.12,
+                      dashArray: '12, 8',
                     }}
                   >
                     <Popup>
@@ -540,7 +541,7 @@ export default function QasrMap() {
                         <span className="text-gray-500">Beyond this = Traveler (Qasr)</span>
                       </div>
                     </Popup>
-                  </Polygon>
+                  </Circle>
                 )}
 
                 {/* City center marker */}

@@ -706,68 +706,44 @@ export function calculateQasrStatus(lat, lng, cityName) {
 }
 
 /**
- * Generate the Hadd al-Tarakhkhus boundary polygon.
- * Uses the circle approximation by default (reliable).
- * Attempts the true polygon buffer algorithm and validates output
- * before using it — if invalid, falls back to the circle.
+ * Get the Hadd al-Tarakhkhus parameters as a center point + radius (meters).
+ * This is used to render the Hadd boundary as a Leaflet Circle overlay,
+ * which is more reliable than a polygon buffer.
+ *
+ * The radius is computed as: max distance from city center to any 'Urf
+ * boundary point + 22 km, converted to meters. This ensures the circle
+ * fully contains all points that are within 22 km of the 'Urf boundary.
+ *
+ * @param {string} cityName
+ * @returns {{ center: [number, number], radiusMeters: number } | null}
  */
-export function generateHaddBoundary(cityName) {
+export function getHaddCircleParams(cityName) {
   const city = URBAN_BOUNDARIES[cityName];
   if (!city) return null;
 
-  // Helper: compute the fallback circle boundary
-  function fallbackCircle() {
-    let maxDist = 0;
-    for (let i = 0; i < city.boundary.length; i++) {
-      const [lat, lng] = city.boundary[i];
-      const dist = haversineDistance(city.center[0], city.center[1], lat, lng);
-      if (dist > maxDist) maxDist = dist;
-    }
-    return generateRadiusCircle(city.center[0], city.center[1], maxDist + HADD_AL_TARAKHKHUS_KM);
+  let maxDist = 0;
+  for (let i = 0; i < city.boundary.length; i++) {
+    const [lat, lng] = city.boundary[i];
+    const dist = haversineDistance(city.center[0], city.center[1], lat, lng);
+    if (dist > maxDist) maxDist = dist;
   }
 
-  // Helper: validate that EVERY point in the polygon is a valid LatLng
-  function isValidPolygon(poly) {
-    if (!poly || poly.length < 3) return false;
-    for (let i = 0; i < poly.length; i++) {
-      const [lat, lng] = poly[i];
-      if (!isFinite(lat) || !isFinite(lng)) return false;
-      if (lat < -90 || lat > 90) return false;
-      if (lng < -180 || lng > 180) return false;
-    }
-    return true;
-  }
-
-  // Try the polygon buffer algorithm
-  try {
-    const buffered = bufferPolygon(city.boundary, HADD_AL_TARAKHKHUS_KM, city.center);
-    if (buffered && isValidPolygon(buffered)) {
-      return buffered;
-    }
-  } catch (e) {
-    // Fall through to circle fallback
-  }
-
-  // Use the reliable circle approximation
-  return fallbackCircle();
+  return {
+    center: [city.center[0], city.center[1]],
+    radiusMeters: (maxDist + HADD_AL_TARAKHKHUS_KM) * 1000,
+  };
 }
 
 /**
  * Check if a point is beyond the Hadd al-Tarakhkhus boundary.
- * Uses the buffered polygon if valid, otherwise falls back to
- * a simple distance-from-city-center check (conservative estimate).
+ * Uses a distance check from the city center (conservative estimate).
+ * The Hadd boundary is defined as a radius from the city center:
+ * max distance of any 'Urf boundary point from center + 22 km.
  */
 function isBeyondHadd(lat, lng, cityName) {
   const city = URBAN_BOUNDARIES[cityName];
   if (!city) return false;
 
-  const buffered = generateHaddBoundary(cityName);
-  if (buffered && buffered.length >= 3) {
-    return !pointInPolygon([lat, lng], buffered);
-  }
-
-  // Fallback: check if the point is beyond a circle centered on the city
-  // with radius = max distance of boundary from center + 22 km
   let maxDist = 0;
   for (let i = 0; i < city.boundary.length; i++) {
     const [blat, blng] = city.boundary[i];
