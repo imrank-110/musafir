@@ -535,8 +535,8 @@ export function bufferPolygon(polygon, offsetKm, origin) {
   }
 
   if (result.length < 3) {
-    // Fallback: if buffering failed, return the original polygon (no buffer)
-    return polygon;
+    // Buffer failed — return null so caller can fall back to circle approximation
+    return null;
   }
 
   // Step 6: Simplify using Ramer-Douglas-Peucker
@@ -741,7 +741,7 @@ export function generateHaddBoundary(cityName) {
   // Try the polygon buffer algorithm
   try {
     const buffered = bufferPolygon(city.boundary, HADD_AL_TARAKHKHUS_KM, city.center);
-    if (isValidPolygon(buffered)) {
+    if (buffered && isValidPolygon(buffered)) {
       return buffered;
     }
   } catch (e) {
