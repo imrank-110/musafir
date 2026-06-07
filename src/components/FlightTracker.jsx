@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { createFlightSession, getAvailableRoutes } from '../utils/flightApi';
-import { calculateFlightPrayerTimes, hoursToTimeString, getCurrentPrayerInfo } from '../utils/prayerMath';
+import { createFlightSession, getAvailableRoutes, getAirports } from '../utils/flightApi';
+import { calculateFlightPrayerTimes, hoursToTimeString, getCurrentPrayerInfo, calculateQiblaDirection } from '../utils/prayerMath';
 
-// ─── Custom Plane Icon ───────────────────────────────────────────────────────
+// ─── Custom Icons ────────────────────────────────────────────────────────────
 
 const planeIcon = L.divIcon({
   className: 'plane-marker',
@@ -45,6 +45,25 @@ const airportIcon = L.divIcon({
   iconAnchor: [12, 12],
 });
 
+const kaabaIcon = L.divIcon({
+  className: 'kaaba-marker',
+  html: `<div style="
+    width: 20px; height: 20px;
+    background: #c4a882;
+    border: 2px solid white;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: bold;
+    color: white;
+    box-shadow: 0 0 12px rgba(196,168,130,0.5);
+  ">K</div>`,
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
+});
+
 // ─── Auto-Fit Map ────────────────────────────────────────────────────────────
 
 function FitBounds({ bounds }) {
@@ -55,6 +74,46 @@ function FitBounds({ bounds }) {
     }
   }, [map, bounds]);
   return null;
+}
+
+// ─── Qibla Line on Map ───────────────────────────────────────────────────────
+
+function QiblaLine({ fromLat, fromLng, bearing }) {
+  const map = useMap();
+  if (!fromLat || !fromLng || bearing == null) return null;
+
+  // Draw a line 500 km in the Qibla direction from the plane
+  const distanceKm = 500;
+  const bearingRad = bearing * Math.PI / 180;
+  const latRad = fromLat * Math.PI / 180;
+  const lngRad = fromLng * Math.PI / 180;
+  const R = 6371;
+
+  const endLat = Math.asin(
+    Math.sin(latRad) * Math.cos(distanceKm / R) +
+    Math.cos(latRad) * Math.sin(distanceKm / R) * Math.cos(bearingRad)
+  );
+  const endLng = lngRad + Math.atan2(
+    Math.sin(bearingRad) * Math.sin(distanceKm / R) * Math.cos(latRad),
+    Math.cos(distanceKm / R) - Math.sin(latRad) * Math.sin(endLat)
+  );
+
+  const positions = [
+    [fromLat, fromLng],
+    [endLat * 180 / Math.PI, endLng * 180 / Math.PI],
+  ];
+
+  return (
+    <Polyline
+      positions={positions}
+      pathOptions={{
+        color: '#c4a882',
+        weight: 2,
+        opacity: 0.7,
+        dashArray: '8, 6',
+      }}
+    />
+  );
 }
 
 // ─── Countdown Timer ─────────────────────────────────────────────────────────
@@ -73,29 +132,105 @@ function CountdownTimer({ seconds }) {
   );
 }
 
-// ─── Prayer Timeline ─────────────────────────────────────────────────────────
+// ─── Flight-Elapsed-Time Prayer Timeline ─────────────────────────────────────
 
-function PrayerTimeline({ prayerTimes, currentPrayer }) {
+function PrayerTimeline({ flightState, prayerTimes, currentPrayer }) {
+  if (!flightState || !prayerTimes) return null;
+
+  const { elapsedMinutes, durationMinutes, position, altitude } = flightState;
+
   const order = [
-    { key: 'fajr', label: 'Fajr', icon: 'F' },
-    { key: 'sunrise', label: 'Sunrise', icon: 'S' },
-    { key: 'dhuhr', label: 'Dhuhr', icon: 'D' },
-    { key: 'asr', label: 'Asr', icon: 'A' },
-    { key: 'maghrib', label: 'Maghrib', icon: 'M' },
-    { key: 'isha', label: 'Isha', icon: 'I' },
+    { key: 'fajr', label: 'Fajr', short: 'F' },
+    { key: 'sunrise', label: 'Sunrise', short: 'S' },
+    { key: 'dhuhr', label: 'Dhuhr', short: 'D' },
+    { key: 'asr', label: 'Asr', short: 'A' },
+    { key: 'maghrib', label: 'Maghrib', short: 'M' },
+    { key: 'isha', label: 'Isha', short: 'I' },
   ];
+
+  // Calculate Qibla at current position
+  const qibla = position ? calculateQiblaDirection(position.lat, position.lng) : null;
+
+  // Build events with elapsed-time annotations
+  const events = order.map(({ key, label, short }) => {
+    const time = prayerTimes[key];
+    // Estimate when this prayer occurs relative to flight elapsed time
+    // We use the current elapsed time as reference and calculate offset
+    const now = new Date();
+    const nowH = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+    const timeDiffHours = time - nowH;
+    const elapsedAtEvent = Math.max(0, elapsedMinutes + timeDiffHours * 60);
+
+    return { key, label, short, time, elapsedAtEvent };
+  });
+
+  // Find current prayer
+  const isCurrent = (key) => currentPrayer?.current?.name === key;
 
   return (
     <div className="bg-white/70 backdrop-blur-xl border border-[#e0d5c8] shadow-[0_8px_32px_0_rgba(0,0,0,0.06)] rounded-3xl p-4 transition-all duration-500 hover:border-[#d0c0b0]">
       <h3 className="text-lg font-semibold text-[#3d352e] mb-3">
         Prayer Timeline
       </h3>
+
+      {/* Flight Timer */}
+      <div className="flex items-center justify-between mb-4 p-3 bg-[#f5f0eb] rounded-xl border border-[#e0d5c8]">
+        <div className="text-center">
+          <div className="text-xs text-[#a09080]">Elapsed</div>
+          <div className="text-lg font-bold text-[#3d352e]">
+            {Math.floor(elapsedMinutes / 60)}h {elapsedMinutes % 60}m
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="text-xs text-[#a09080]">Duration</div>
+          <div className="text-lg font-bold text-[#3d352e]">
+            {Math.floor(durationMinutes / 60)}h {durationMinutes % 60}m
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="text-xs text-[#a09080]">Progress</div>
+          <div className="text-lg font-bold text-[#c4a882]">
+            {durationMinutes > 0 ? Math.round((elapsedMinutes / durationMinutes) * 100) : 0}%
+          </div>
+        </div>
+      </div>
+
+      {/* Qibla Direction */}
+      {qibla && (
+        <div className="flex items-center justify-between mb-4 p-3 bg-[#f5f0eb] rounded-xl border border-[#e0d5c8]">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-[#c4a882]/20 flex items-center justify-center">
+              <div
+                className="w-6 h-6 border-2 border-[#c4a882] rounded-sm"
+                style={{ transform: `rotate(${qibla.bearing}deg)` }}
+              />
+            </div>
+            <div>
+              <div className="text-xs text-[#a09080]">Qibla Direction</div>
+              <div className="text-sm font-bold text-[#3d352e]">{qibla.bearingText}</div>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-[#a09080]">Distance to Kaaba</div>
+            <div className="text-sm font-bold text-[#3d352e]">
+              {position ? Math.round(
+                Math.acos(
+                  Math.sin(position.lat * Math.PI / 180) * Math.sin(21.4225 * Math.PI / 180) +
+                  Math.cos(position.lat * Math.PI / 180) * Math.cos(21.4225 * Math.PI / 180) *
+                  Math.cos((39.8262 - position.lng) * Math.PI / 180)
+                ) * 6371
+              ).toLocaleString() : '--'} km
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Timeline */}
       <div className="relative pl-6">
         <div className="absolute left-[8px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-[#c4a882]/60 via-[#b89978]/60 to-[#c4a882]/60 shadow-[0_0_8px_rgba(196,168,130,0.3)]" />
-        {order.map(({ key, label, icon }, idx) => {
-          const time = prayerTimes[key];
-          const isCurrent = currentPrayer?.current?.name === key;
-          const isPast = currentPrayer && (() => {
+        {events.map(({ key, label, short, time, elapsedAtEvent }) => {
+          const current = isCurrent(key);
+          const past = currentPrayer && (() => {
             const now = new Date();
             const nowH = now.getHours() + now.getMinutes() / 60;
             return time < nowH && key !== 'fajr';
@@ -105,26 +240,36 @@ function PrayerTimeline({ prayerTimes, currentPrayer }) {
             <div
               key={key}
               className={`flex items-center justify-between p-3 rounded-xl transition-all duration-300 ${
-                isCurrent
+                current
                   ? 'bg-white/80 backdrop-blur-2xl border border-[#e0d5c8] shadow-[0_8px_32px_0_rgba(0,0,0,0.06)] rounded-3xl border-[#c4a882]/40'
-                  : isPast
+                  : past
                   ? 'opacity-40'
                   : 'hover:bg-[#ede6dc]/50'
               }`}
             >
               <div className="flex items-center gap-3">
                 <div className="w-7 h-7 rounded-full bg-[#ede6dc] flex items-center justify-center text-xs font-bold text-[#8a7a6a]">
-                  {icon}
+                  {short}
                 </div>
-                <span className={`font-medium ${isCurrent ? 'text-[#c4a882]' : 'text-[#3d352e]'}`}>
-                  {label}
-                </span>
+                <div>
+                  <span className={`font-medium ${current ? 'text-[#c4a882]' : 'text-[#3d352e]'}`}>
+                    {label}
+                  </span>
+                  <div className="text-xs text-[#a09080]">
+                    ~{Math.floor(elapsedAtEvent / 60)}h {Math.round(elapsedAtEvent % 60)}m into flight
+                  </div>
+                </div>
               </div>
               <div className="flex items-center gap-3">
-                <span className={`font-mono ${isCurrent ? 'text-[#3d352e] font-bold' : 'text-[#8a7a6a]'}`}>
-                  {hoursToTimeString(time)}
-                </span>
-                {isCurrent && (
+                <div className="text-right">
+                  <div className={`font-mono text-sm ${current ? 'text-[#3d352e] font-bold' : 'text-[#8a7a6a]'}`}>
+                    {hoursToTimeString(time)}
+                  </div>
+                  <div className="text-xs text-[#a09080]">
+                    {current ? 'Now' : past ? 'Passed' : 'Upcoming'}
+                  </div>
+                </div>
+                {current && (
                   <span className="px-2 py-0.5 bg-gradient-to-r from-[#c4a882] to-[#b89978] text-white text-xs rounded-full font-bold shadow-lg shadow-[#c4a882]/30">
                     NOW
                   </span>
@@ -135,15 +280,27 @@ function PrayerTimeline({ prayerTimes, currentPrayer }) {
         })}
       </div>
 
+      {/* Current Prayer Countdown */}
       {currentPrayer && (
         <div className="mt-4 p-3 bg-[#f5f0eb] rounded-xl border border-[#e0d5c8]">
-          <div className="text-sm text-[#8a7a6a] mb-1">
-            {currentPrayer.current?.label} window closes in:
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm text-[#8a7a6a]">
+              {currentPrayer.current?.label} window closes in:
+            </div>
+            <CountdownTimer seconds={currentPrayer.timeUntilNext} />
           </div>
-          <CountdownTimer seconds={currentPrayer.timeUntilNext} />
+          <div className="flex items-center justify-between text-xs text-[#a09080]">
+            <span>Window opened: {hoursToTimeString(currentPrayer.current?.time)}</span>
+            <span>Window: {Math.round(currentPrayer.windowDuration / 60)} min</span>
+          </div>
           {currentPrayer.next && (
             <div className="text-xs text-[#a09080] mt-1">
               Next: {currentPrayer.next.label} at {hoursToTimeString(currentPrayer.next.time)}
+            </div>
+          )}
+          {qibla && (
+            <div className="text-xs text-[#c4a882] mt-1">
+              Face Qibla: {qibla.bearingText}
             </div>
           )}
         </div>
@@ -276,8 +433,12 @@ export default function FlightTracker() {
   const [currentPrayer, setCurrentPrayer] = useState(null);
   const [error, setError] = useState('');
   const [isRunning, setIsRunning] = useState(false);
+  const [showAirportPicker, setShowAirportPicker] = useState(false);
+  const [customDep, setCustomDep] = useState('');
+  const [customArr, setCustomArr] = useState('');
   const intervalRef = useRef(null);
   const availableRoutes = getAvailableRoutes();
+  const airports = getAirports();
 
   // Start tracking
   const startTracking = useCallback(() => {
@@ -286,8 +447,21 @@ export default function FlightTracker() {
       return;
     }
 
-    const newSession = createFlightSession(flightCode.trim(), new Date(departureDate));
+    // Try with custom airports if provided
+    const newSession = createFlightSession(
+      flightCode.trim(),
+      new Date(departureDate),
+      customDep || undefined,
+      customArr || undefined
+    );
+
     if (newSession.error) {
+      // If route not found and we haven't shown the airport picker yet
+      if (!customDep && !customArr) {
+        setShowAirportPicker(true);
+        setError(newSession.error);
+        return;
+      }
       setError(newSession.error);
       setSession(null);
       setFlightState(null);
@@ -295,10 +469,11 @@ export default function FlightTracker() {
     }
 
     setError('');
+    setShowAirportPicker(false);
     setSession(newSession);
     setFlightState(newSession.getState());
     setIsRunning(true);
-  }, [flightCode, departureDate]);
+  }, [flightCode, departureDate, customDep, customArr]);
 
   // Stop tracking
   const stopTracking = useCallback(() => {
@@ -347,9 +522,8 @@ export default function FlightTracker() {
       }
     };
 
-    // Run tick every 2 seconds (simulating 1 minute of flight time)
     intervalRef.current = setInterval(tick, 2000);
-    tick(); // Initial tick
+    tick();
 
     return () => {
       if (intervalRef.current) {
@@ -367,6 +541,11 @@ export default function FlightTracker() {
   };
 
   const mapBounds = getMapBounds();
+
+  // Current Qibla for the map line
+  const currentQibla = flightState?.position
+    ? calculateQiblaDirection(flightState.position.lat, flightState.position.lng)
+    : null;
 
   return (
     <div className="min-h-screen">
@@ -412,7 +591,12 @@ export default function FlightTracker() {
               <select
                 onChange={(e) => {
                   if (e.target.value) {
-                    setFlightCode(e.target.value);
+                    const route = availableRoutes.find(r => r.code === e.target.value);
+                    if (route) {
+                      setFlightCode(route.code);
+                      setCustomDep(route.depCode);
+                      setCustomArr(route.arrCode);
+                    }
                   }
                 }}
                 className="w-full px-3 py-2 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] focus:outline-none focus:border-[#c4a882]"
@@ -455,7 +639,56 @@ export default function FlightTracker() {
               )}
             </div>
           </div>
-          {error && (
+
+          {/* Airport Picker for Unknown Routes */}
+          {showAirportPicker && (
+            <div className="mt-4 p-4 bg-[#f5f0eb] rounded-xl border border-[#e0d5c8]">
+              <p className="text-sm text-[#8a7a6a] mb-3">
+                Flight "{flightCode}" not found in database. Please select departure and arrival airports:
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="block text-xs text-[#a09080] mb-1">Departure Airport</label>
+                  <select
+                    value={customDep}
+                    onChange={(e) => setCustomDep(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] focus:outline-none focus:border-[#c4a882]"
+                  >
+                    <option value="">Select departure...</option>
+                    {airports.map((a) => (
+                      <option key={a.code} value={a.code}>
+                        {a.code} — {a.city} ({a.name})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-[#a09080] mb-1">Arrival Airport</label>
+                  <select
+                    value={customArr}
+                    onChange={(e) => setCustomArr(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] focus:outline-none focus:border-[#c4a882]"
+                  >
+                    <option value="">Select arrival...</option>
+                    {airports.map((a) => (
+                      <option key={a.code} value={a.code}>
+                        {a.code} — {a.city} ({a.name})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <button
+                onClick={startTracking}
+                disabled={!customDep || !customArr}
+                className="w-full px-4 py-2 bg-[#c4a882] hover:bg-[#b89978] disabled:bg-[#e0d5c8] disabled:text-[#a09080] text-white font-bold rounded-lg transition-colors"
+              >
+                Set Route & Start Tracking
+              </button>
+            </div>
+          )}
+
+          {error && !showAirportPicker && (
             <div className="mt-3 p-3 bg-[#f0e0d0] border border-[#d0b0a0] rounded-lg text-[#8a5a4a] text-sm">
               {error}
             </div>
@@ -493,6 +726,26 @@ export default function FlightTracker() {
                     />
                   )}
 
+                  {/* Qibla direction line from plane */}
+                  {flightState.position && flightState.state === 'in-flight' && currentQibla && (
+                    <QiblaLine
+                      fromLat={flightState.position.lat}
+                      fromLng={flightState.position.lng}
+                      bearing={currentQibla.bearing}
+                    />
+                  )}
+
+                  {/* Kaaba marker */}
+                  <Marker position={[21.4225, 39.8262]} icon={kaabaIcon}>
+                    <Popup>
+                      <div className="text-sm">
+                        <strong>Kaaba</strong>
+                        <br />
+                        <span className="text-[#a09080]">Makkah, Saudi Arabia</span>
+                      </div>
+                    </Popup>
+                  </Marker>
+
                   {/* Departure marker */}
                   {flightState.departure && (
                     <Marker position={[flightState.departure.lat, flightState.departure.lng]} icon={airportIcon}>
@@ -529,24 +782,50 @@ export default function FlightTracker() {
                           Alt: {Math.round(flightState.altitude * 3.28084).toLocaleString()} ft
                           <br />
                           Speed: {Math.round(flightState.groundSpeed * 0.539957)} kn
+                          <br />
+                          Qibla: {currentQibla?.bearingText || '--'}
                         </div>
                       </Popup>
                     </Marker>
                   )}
                 </MapContainer>
               </div>
+
+              {/* Map Legend */}
+              <div className="mt-2 flex flex-wrap gap-4 text-xs text-[#8a7a6a]">
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 bg-[#c4a882] rounded-full" />
+                  <span>Plane Position</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 bg-[#b89978] rounded" />
+                  <span>Airport</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 bg-[#c4a882] rounded-sm" />
+                  <span>Kaaba</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-0.5 bg-[#c4a882]" style={{ borderTop: '2px dashed #c4a882' }} />
+                  <span>Qibla Direction</span>
+                </div>
+              </div>
             </div>
 
             {/* Sidebar */}
             <div className="space-y-4">
               <FlightInfoPanel flightState={flightState} />
-              {prayerTimes && <PrayerTimeline prayerTimes={prayerTimes} currentPrayer={currentPrayer} />}
+              <PrayerTimeline
+                flightState={flightState}
+                prayerTimes={prayerTimes}
+                currentPrayer={currentPrayer}
+              />
             </div>
           </div>
         )}
 
         {/* Empty state */}
-        {!flightState && !error && (
+        {!flightState && !error && !showAirportPicker && (
           <div className="text-center py-16">
             <div className="text-5xl mb-4 text-[#c4a882] font-serif">M</div>
             <h2 className="text-xl font-bold text-[#3d352e] mb-2">Ready to Track Your Flight</h2>
@@ -554,6 +833,8 @@ export default function FlightTracker() {
               Enter a flight code above to start tracking prayer times during your journey.
               <br />
               Try <strong>QR774</strong> (Doha → Houston) or select from the dropdown.
+              <br />
+              Unknown flight codes will prompt you to select departure and arrival airports.
             </p>
           </div>
         )}

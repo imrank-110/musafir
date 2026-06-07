@@ -37,7 +37,7 @@ const AIRPORTS = {
 // ─── Route Database ──────────────────────────────────────────────────────────
 
 const ROUTES = {
-  'QR774': { dep: 'DOH', arr: 'IAH', duration: 16 * 60 + 20 }, // Doha → Houston ~16h20m
+  'QR774': { dep: 'DOH', arr: 'IAH', duration: 16 * 60 + 20 },
   'QR725': { dep: 'DOH', arr: 'LHR', duration: 7 * 60 + 30 },
   'QR920': { dep: 'DOH', arr: 'SYD', duration: 14 * 60 + 0 },
   'EK201': { dep: 'DXB', arr: 'JFK', duration: 14 * 60 + 0 },
@@ -77,7 +77,7 @@ function greatCircleParams(lat1, lng1, lat2, lng2) {
 
   const a = Math.sin(Δλ) * Math.cos(φ2);
   const b = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-  const θ = Math.atan2(a, b); // initial bearing in radians
+  const θ = Math.atan2(a, b);
 
   const d = Math.acos(Math.sin(φ1) * Math.sin(φ2) + Math.cos(φ1) * Math.cos(φ2) * Math.cos(Δλ)) * EARTH_RADIUS_KM;
 
@@ -92,21 +92,20 @@ function greatCirclePoint(lat1, lng1, lat2, lng2, f) {
   const φ2 = lat2 * DEG;
   const λ1 = lng1 * DEG;
   const λ2 = lng2 * DEG;
-  const Δλ = λ2 - λ1;
 
-  const a = Math.sin((1 - f) * Math.acos(Math.sin(φ1) * Math.sin(φ2) + Math.cos(φ1) * Math.cos(φ2) * Math.cos(Δλ)));
-  const b = Math.sin(f * Math.acos(Math.sin(φ1) * Math.sin(φ2) + Math.cos(φ1) * Math.cos(φ2) * Math.cos(Δλ)));
-
-  // Use spherical linear interpolation (slerp)
-  const sinD = Math.sin(Math.acos(Math.sin(φ1) * Math.sin(φ2) + Math.cos(φ1) * Math.cos(φ2) * Math.cos(Δλ)));
+  const d = Math.acos(Math.sin(φ1) * Math.sin(φ2) + Math.cos(φ1) * Math.cos(φ2) * Math.cos(λ2 - λ1));
+  const sinD = Math.sin(d);
+  
   if (sinD < 1e-10) {
-    // Points are nearly the same
     return { lat: lat1, lng: lng1 };
   }
 
-  const x = (Math.sin((1 - f) * Math.asin(sinD)) * Math.cos(φ1) * Math.cos(λ1) + Math.sin(f * Math.asin(sinD)) * Math.cos(φ2) * Math.cos(λ2)) / sinD;
-  const y = (Math.sin((1 - f) * Math.asin(sinD)) * Math.cos(φ1) * Math.sin(λ1) + Math.sin(f * Math.asin(sinD)) * Math.cos(φ2) * Math.sin(λ2)) / sinD;
-  const z = (Math.sin((1 - f) * Math.asin(sinD)) * Math.sin(φ1) + Math.sin(f * Math.asin(sinD)) * Math.sin(φ2)) / sinD;
+  const a = Math.sin((1 - f) * d) / sinD;
+  const b = Math.sin(f * d) / sinD;
+
+  const x = a * Math.cos(φ1) * Math.cos(λ1) + b * Math.cos(φ2) * Math.cos(λ2);
+  const y = a * Math.cos(φ1) * Math.sin(λ1) + b * Math.cos(φ2) * Math.sin(λ2);
+  const z = a * Math.sin(φ1) + b * Math.sin(φ2);
 
   const lat = Math.atan2(z, Math.sqrt(x * x + y * y)) * RAD;
   const lng = Math.atan2(y, x) * RAD;
@@ -126,6 +125,39 @@ export function generateFlightPath(lat1, lng1, lat2, lng2, numPoints = 100) {
   return points;
 }
 
+// ─── Airport List ────────────────────────────────────────────────────────────
+
+/**
+ * Get all available airports.
+ */
+export function getAirports() {
+  return Object.entries(AIRPORTS).map(([code, info]) => ({
+    code,
+    ...info,
+  }));
+}
+
+/**
+ * Look up airport info by IATA code.
+ */
+export function getAirportInfo(code) {
+  return AIRPORTS[code.toUpperCase()] || null;
+}
+
+/**
+ * Get all available routes for the dropdown.
+ */
+export function getAvailableRoutes() {
+  return Object.entries(ROUTES).map(([code, route]) => ({
+    code,
+    departure: AIRPORTS[route.dep]?.city || route.dep,
+    arrival: AIRPORTS[route.arr]?.city || route.arr,
+    depCode: route.dep,
+    arrCode: route.arr,
+    duration: route.duration,
+  }));
+}
+
 // ─── Mock Flight State Machine ───────────────────────────────────────────────
 
 /**
@@ -139,24 +171,57 @@ function parseFlightCode(code) {
 }
 
 /**
- * Look up a route by flight code.
+ * Estimate flight duration based on great circle distance between airports.
+ * Rough average: 800 km/h cruise speed + 30 min for takeoff/landing.
  */
-function lookupRoute(flightCode) {
+function estimateDuration(depLat, depLng, arrLat, arrLng) {
+  const params = greatCircleParams(depLat, depLng, arrLat, arrLng);
+  const cruiseHours = params.distance / 800; // 800 km/h cruise
+  return Math.round(cruiseHours * 60 + 30); // +30 min overhead
+}
+
+/**
+ * Look up a route by flight code, or generate one dynamically.
+ */
+function lookupRoute(flightCode, customDepCode, customArrCode) {
   const parsed = parseFlightCode(flightCode);
   if (!parsed) return null;
+
+  // First check hardcoded routes
   const route = ROUTES[parsed.full];
-  if (!route) return null;
-  const dep = AIRPORTS[route.dep];
-  const arr = AIRPORTS[route.arr];
-  if (!dep || !arr) return null;
-  return {
-    flightCode: parsed.full,
-    airline: parsed.airline,
-    flightNumber: parsed.number,
-    departure: { ...dep, code: route.dep },
-    arrival: { ...arr, code: route.arr },
-    durationMinutes: route.duration,
-  };
+  if (route) {
+    const dep = AIRPORTS[route.dep];
+    const arr = AIRPORTS[route.arr];
+    if (dep && arr) {
+      return {
+        flightCode: parsed.full,
+        airline: parsed.airline,
+        flightNumber: parsed.number,
+        departure: { ...dep, code: route.dep },
+        arrival: { ...arr, code: route.arr },
+        durationMinutes: route.duration,
+      };
+    }
+  }
+
+  // If custom airports provided, generate a dynamic route
+  if (customDepCode && customArrCode) {
+    const dep = AIRPORTS[customDepCode.toUpperCase()];
+    const arr = AIRPORTS[customArrCode.toUpperCase()];
+    if (dep && arr) {
+      const duration = estimateDuration(dep.lat, dep.lng, arr.lat, arr.lng);
+      return {
+        flightCode: parsed.full,
+        airline: parsed.airline,
+        flightNumber: parsed.number,
+        departure: { ...dep, code: customDepCode.toUpperCase() },
+        arrival: { ...arr, code: customArrCode.toUpperCase() },
+        durationMinutes: duration,
+      };
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -164,22 +229,24 @@ function lookupRoute(flightCode) {
  * 
  * @param {string} flightCode - e.g., "QR 774"
  * @param {Date} departureDate - The scheduled departure date
+ * @param {string} [customDepCode] - Custom departure airport code (for unknown routes)
+ * @param {string} [customArrCode] - Custom arrival airport code (for unknown routes)
  * @returns {Object} Flight tracking controller
  */
-export function createFlightSession(flightCode, departureDate) {
-  const route = lookupRoute(flightCode);
+export function createFlightSession(flightCode, departureDate, customDepCode, customArrCode) {
+  const route = lookupRoute(flightCode, customDepCode, customArrCode);
   if (!route) {
-    return { error: `Flight "${flightCode}" not found in database. Try QR774, QR725, EK201, etc.` };
+    return { error: `Flight "${flightCode}" not found. Please select departure and arrival airports.` };
   }
 
   // State
-  let state = 'pre-takeoff'; // 'pre-takeoff' | 'in-flight' | 'landed'
+  let state = 'pre-takeoff';
   let takeoffTime = null;
   let currentPosition = { lat: route.departure.lat, lng: route.departure.lng };
   let elapsedMinutes = 0;
   let altitude = 0;
   let groundSpeed = 0;
-  let flightProgress = 0; // 0..1
+  let flightProgress = 0;
 
   // Pre-takeoff mock data
   let gate = `Gate ${Math.floor(Math.random() * 30) + 1}`;
@@ -194,9 +261,6 @@ export function createFlightSession(flightCode, departureDate) {
     200
   );
 
-  /**
-   * Simulate takeoff — transitions from pre-takeoff to in-flight.
-   */
   function takeOff() {
     if (state !== 'pre-takeoff') return;
     state = 'in-flight';
@@ -208,12 +272,8 @@ export function createFlightSession(flightCode, departureDate) {
     currentPosition = { lat: route.departure.lat, lng: route.departure.lng };
   }
 
-  /**
-   * Advance the simulation by one minute.
-   */
   function tick() {
     if (state === 'pre-takeoff') {
-      // Simulate ground operations
       const r = Math.random();
       if (r < 0.1) {
         delayMinutes += 1;
@@ -232,27 +292,21 @@ export function createFlightSession(flightCode, departureDate) {
       elapsedMinutes += 1;
       flightProgress = Math.min(elapsedMinutes / route.durationMinutes, 1);
 
-      // Simulate climb, cruise, descent
       if (flightProgress < 0.05) {
-        // Climb phase
-        altitude = Math.min(10668, flightProgress / 0.05 * 10668); // 35,000 ft = 10,668 m
+        altitude = Math.min(10668, flightProgress / 0.05 * 10668);
         groundSpeed = 250 + (flightProgress / 0.05) * 600;
       } else if (flightProgress > 0.85) {
-        // Descent phase
         const descentProgress = (flightProgress - 0.85) / 0.15;
         altitude = Math.max(0, 10668 * (1 - descentProgress));
         groundSpeed = Math.max(250, 850 * (1 - descentProgress * 0.7));
       } else {
-        // Cruise
-        altitude = 10668; // 35,000 ft
-        groundSpeed = 850; // ~460 knots
+        altitude = 10668;
+        groundSpeed = 850;
       }
 
-      // Calculate position along path
       const idx = Math.min(Math.floor(flightProgress * (pathPoints.length - 1)), pathPoints.length - 1);
       currentPosition = pathPoints[idx];
 
-      // Check for landing
       if (flightProgress >= 1) {
         state = 'landed';
         currentPosition = { lat: route.arrival.lat, lng: route.arrival.lng };
@@ -262,9 +316,6 @@ export function createFlightSession(flightCode, departureDate) {
     }
   }
 
-  /**
-   * Get the current flight state snapshot.
-   */
   function getState() {
     const now = new Date();
 
@@ -309,7 +360,6 @@ export function createFlightSession(flightCode, departureDate) {
       };
     }
 
-    // Landed
     return {
       state: 'landed',
       flightCode: route.flightCode,
@@ -335,23 +385,4 @@ export function createFlightSession(flightCode, departureDate) {
     getState,
     state: () => state,
   };
-}
-
-/**
- * Look up airport info by IATA code.
- */
-export function getAirportInfo(code) {
-  return AIRPORTS[code.toUpperCase()] || null;
-}
-
-/**
- * Get all available routes for the dropdown.
- */
-export function getAvailableRoutes() {
-  return Object.entries(ROUTES).map(([code, route]) => ({
-    code,
-    departure: AIRPORTS[route.dep]?.city || route.dep,
-    arrival: AIRPORTS[route.arr]?.city || route.arr,
-    duration: route.duration,
-  }));
 }

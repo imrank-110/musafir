@@ -1,5 +1,5 @@
 /**
- * prayerMath.js — Solar Calculation Engine
+ * prayerMath.js — Solar Calculation Engine & Qibla Direction
  * 
  * Implements the University of Tehran (Institute of Geophysics) parameters
  * for Ayatollah Sistani's rulings:
@@ -7,7 +7,7 @@
  *   Maghrib: 4.5° below horizon
  *   Isha:   14.0° below horizon
  * 
- * Includes altitude correction for high-altitude flight.
+ * Includes altitude correction for high-altitude flight and Qibla direction.
  */
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -22,6 +22,10 @@ const TEHRAN_ANGLES = {
 };
 
 const EARTH_RADIUS_KM = 6371;
+
+// Kaaba coordinates
+const KAABA_LAT = 21.4225;
+const KAABA_LNG = 39.8262;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -83,12 +87,60 @@ function altitudeDipAngle(altitudeMeters) {
 
 function correctedAngle(baseAngle, altitudeMeters, isFajr) {
   const dip = altitudeDipAngle(altitudeMeters);
-  // For Fajr: the sun needs to be LESS below horizon (higher) because horizon dips
-  // For Maghrib: the sun needs to be MORE below horizon (lower) because horizon dips
   if (isFajr) {
     return Math.max(baseAngle - dip, 0);
   }
   return baseAngle + dip;
+}
+
+// ─── Qibla Direction ─────────────────────────────────────────────────────────
+
+/**
+ * Calculate the Qibla direction (bearing to Kaaba) from a given location.
+ * 
+ * @param {number} lat - Current latitude in degrees
+ * @param {number} lng - Current longitude in degrees
+ * @returns {Object} { bearing: number (degrees from true north), 
+ *                     bearingText: string (e.g., "47° NE"),
+ *                     compassDirection: string (e.g., "NE") }
+ */
+export function calculateQiblaDirection(lat, lng) {
+  const φ1 = lat * DEG;
+  const φ2 = KAABA_LAT * DEG;
+  const λ1 = lng * DEG;
+  const λ2 = KAABA_LNG * DEG;
+  const Δλ = λ2 - λ1;
+
+  // Initial bearing formula
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  let bearing = (atan2(y, x) + 360) % 360;
+
+  // Compass direction text
+  const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  const idx = Math.round(bearing / 45) % 8;
+  const compassDirection = directions[idx];
+
+  return {
+    bearing,
+    bearingText: `${Math.round(bearing)}° ${compassDirection}`,
+    compassDirection,
+    kaabaLat: KAABA_LAT,
+    kaabaLng: KAABA_LNG,
+  };
+}
+
+/**
+ * Calculate distance (km) from current position to Kaaba.
+ */
+export function distanceToKaaba(lat, lng) {
+  const φ1 = lat * DEG;
+  const φ2 = KAABA_LAT * DEG;
+  const Δλ = (KAABA_LNG - lng) * DEG;
+  return Math.acos(
+    Math.sin(φ1) * Math.sin(φ2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.cos(Δλ)
+  ) * EARTH_RADIUS_KM;
 }
 
 // ─── Main Prayer Time Calculator ─────────────────────────────────────────────
@@ -114,16 +166,14 @@ export function calculatePrayerTimes(date, lat, lng, timezone, altitudeMeters = 
   const y = year + 4800 - a;
   const m = month + 12 * a - 3;
   let jd = day + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - Math.floor(y / 79) - 32083;
-  // For Gregorian
   jd = jd - Math.floor((y - 1) / 100) + Math.floor((y - 1) / 400) + 2;
 
   const dhuhrBase = dhuhrMinutes(jd, lng, timezone);
   const dhuhr = fixHour(dhuhrBase);
 
   const dec = sunDeclination(jd);
-  const noon = dhuhrBase - 12; // solar noon in hours from local midnight
+  const noon = dhuhrBase - 12;
 
-  // Hour angle formula: cos(ha) = (sin(angle) - sin(lat)*sin(dec)) / (cos(lat)*cos(dec))
   function hourAngle(angle) {
     const numerator = sin(angle) - sin(lat) * sin(dec);
     const denominator = cos(lat) * cos(dec);
@@ -133,7 +183,7 @@ export function calculatePrayerTimes(date, lat, lng, timezone, altitudeMeters = 
     return acos(val) / 15;
   }
 
-  // Sunrise / Sunset (angle = -0.833° for atmospheric refraction at sea level)
+  // Sunrise / Sunset
   const sunriseAngle = -0.833 - altitudeDipAngle(altitudeMeters);
   const sunriseHA = hourAngle(sunriseAngle);
   const sunrise = fixHour(dhuhrBase - sunriseHA);
@@ -155,8 +205,6 @@ export function calculatePrayerTimes(date, lat, lng, timezone, altitudeMeters = 
   const isha = fixHour(dhuhrBase + ishaHA);
 
   // Asr (shadow length = 1, standard for Shia)
-  // asr = dhuhr + ha_asr, where ha_asr = acos((sin(arc) - sin(lat)*sin(dec)) / (cos(lat)*cos(dec))) / 15
-  // arc = atan(1 / (tan(|lat - dec|) + 1))
   const A = Math.abs(lat - dec);
   const arc = atan2(1, tan(A) + 1);
   const asrNumerator = sin(arc) - sin(lat) * sin(dec);
@@ -170,7 +218,7 @@ export function calculatePrayerTimes(date, lat, lng, timezone, altitudeMeters = 
   }
   const asr = fixHour(dhuhrBase + (isNaN(asrHA) ? 0 : asrHA));
 
-  // Midnight (midpoint between sunset and sunrise)
+  // Midnight
   let midnight = fixHour(sunset + (sunrise + 24 - sunset) / 2);
 
   return {
@@ -196,7 +244,6 @@ export function hoursToTimeString(hours) {
 
 /**
  * Get the current prayer window info.
- * Returns which prayer is active, when it started, when it ends, and countdown.
  */
 export function getCurrentPrayerInfo(prayerTimes, nowHours) {
   const order = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
@@ -209,14 +256,12 @@ export function getCurrentPrayerInfo(prayerTimes, nowHours) {
     isha: 'Isha',
   };
 
-  // Build array of { time, name, label }
   const events = order.map((key) => ({
     time: prayerTimes[key],
     name: key,
     label: labels[key],
   }));
 
-  // Find current and next
   let current = null;
   let next = null;
 
@@ -231,14 +276,12 @@ export function getCurrentPrayerInfo(prayerTimes, nowHours) {
     }
   }
 
-  // Handle after isha (before midnight)
   if (!current) {
     const lastEvent = events[events.length - 1];
     if (nowHours >= lastEvent.time) {
       current = lastEvent;
       next = { time: events[0].time + 24, name: events[0].name, label: events[0].label };
     } else {
-      // Before fajr
       current = { time: events[events.length - 1].time - 24, name: events[events.length - 1].name, label: events[events.length - 1].label };
       next = events[0];
     }
@@ -259,14 +302,36 @@ export function getCurrentPrayerInfo(prayerTimes, nowHours) {
 
 /**
  * Calculate prayer times along a flight path at a given moment.
+ */
+export function calculateFlightPrayerTimes(lat, lng, altitudeMeters, date) {
+  const tz = Math.round(lng / 15);
+  return calculatePrayerTimes(date, lat, lng, tz, altitudeMeters);
+}
+
+/**
+ * Generate a prayer schedule indexed by elapsed flight time (minutes).
+ * 
  * @param {number} lat - Current latitude
  * @param {number} lng - Current longitude
  * @param {number} altitudeMeters - Current altitude
  * @param {Date} date - Current date/time
- * @returns {Object} prayer times
+ * @param {number} elapsedMinutes - Minutes into the flight
+ * @param {number} durationMinutes - Total flight duration
+ * @returns {Object} prayer times with elapsed-minute annotations
  */
-export function calculateFlightPrayerTimes(lat, lng, altitudeMeters, date) {
-  // Estimate timezone from longitude
-  const tz = Math.round(lng / 15);
-  return calculatePrayerTimes(date, lat, lng, tz, altitudeMeters);
+export function generateFlightPrayerSchedule(lat, lng, altitudeMeters, date, elapsedMinutes, durationMinutes) {
+  const times = calculateFlightPrayerTimes(lat, lng, altitudeMeters, date);
+  
+  // Calculate Qibla at this position
+  const qibla = calculateQiblaDirection(lat, lng);
+  
+  return {
+    times,
+    qibla,
+    position: { lat, lng },
+    altitude: altitudeMeters,
+    elapsedMinutes,
+    durationMinutes,
+    progress: durationMinutes > 0 ? elapsedMinutes / durationMinutes : 0,
+  };
 }
