@@ -1,188 +1,168 @@
+/* ─── Tailwind ─────────────────────────────────────────────────────────────── */
 @import "tailwindcss";
 
+/* ─── Design Tokens ─────────────────────────────────────────────────────────── */
 :root {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* Colors */
+  --bg: #fafafa;
+  --bg-card: #ffffff;
+  --bg-secondary: #f5f5f5;
+  --text-primary: #1a1a1a;
+  --text-secondary: #737373;
+  --text-tertiary: #a3a3a3;
+  --border: #e5e5e5;
+  --border-light: #f0f0f0;
+  --accent: #b8860b;
+  --accent-hover: #a07608;
+  --accent-light: rgba(184, 134, 11, 0.08);
+  --accent-muted: rgba(184, 134, 11, 0.5);
+  --danger: #dc2626;
+  --success: #16a34a;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-xl: 0 10px 15px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+  --shadow-popup: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 4px 10px -5px rgba(0, 0, 0, 0.04);
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  /* Font */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* ─── Base Styles ──────────────────────────────────────────────────────────── */
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   padding: 0;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--bg);
+  color: var(--text-primary);
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* ─── Safe Areas ──────────────────────────────────────────────────────────── */
+body {
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
-  background-color: #f5f0eb;
-  color: #3d352e;
-  overflow-x: hidden;
-  -webkit-tap-highlight-color: transparent;
-  -webkit-user-select: none;
-  user-select: none;
 }
 
-/* ─── Mobile safe area overrides for sticky headers ──────────────────────── */
-
-.sticky {
-  padding-top: env(safe-area-inset-top, 0px);
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* ─── Background Animations ─────────────────────────────────────────────────── */
-
-@keyframes blob {
-  0% {
-    transform: translate(0px, 0px) scale(1) rotate(0deg);
-    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
-  }
-  25% {
-    transform: translate(30px, -50px) scale(1.1) rotate(90deg);
-    border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%;
-  }
-  50% {
-    transform: translate(-20px, 20px) scale(0.9) rotate(180deg);
-    border-radius: 50% 60% 30% 70% / 40% 50% 60% 50%;
-  }
-  75% {
-    transform: translate(40px, 30px) scale(1.05) rotate(270deg);
-    border-radius: 70% 30% 50% 50% / 30% 70% 50% 60%;
-  }
-  100% {
-    transform: translate(0px, 0px) scale(1) rotate(360deg);
-    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
-  }
+/* ─── Transitions ──────────────────────────────────────────────────────────── */
+* {
+  transition-property: background-color, border-color, color, opacity, transform, box-shadow;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-20px);
-  }
+/* ─── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
 }
 
-@keyframes glass-shimmer {
-  0% {
-    background-position: -200% center;
-  }
-  100% {
-    background-position: 200% center;
-  }
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 8px rgba(180, 150, 120, 0.3);
-  }
-  50% {
-    box-shadow: 0 0 16px rgba(180, 150, 120, 0.6);
-  }
-}
-
-/* ─── Animation Utility Classes ──────────────────────────────────────────── */
-
-.animate-blob {
-  animation: blob 20s infinite ease-in-out;
-}
-
-.animate-blob-delayed {
-  animation: blob 25s infinite ease-in-out reverse;
-}
-
-.animate-blob-slow {
-  animation: blob 30s infinite ease-in-out;
-  animation-delay: -5s;
-}
-
-.animate-float {
-  animation: float 6s ease-in-out infinite;
-}
-
-.animate-glass-shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.05) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.05) 75%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  animation: glass-shimmer 4s ease-in-out infinite;
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
-}
-
-/* ─── Leaflet overrides for light theme ───────────────────────────────────── */
-
+/* ─── Leaflet Overrides ────────────────────────────────────────────────────── */
 .leaflet-container {
-  background: #f5f0eb !important;
-  font-family: inherit;
+  background: var(--bg-card) !important;
+  font-family: var(--font-sans) !important;
 }
 
 .leaflet-popup-content-wrapper {
-  background: rgba(255, 252, 245, 0.95) !important;
-  backdrop-filter: blur(16px) !important;
-  -webkit-backdrop-filter: blur(16px) !important;
-  color: #3d352e !important;
-  border: 1px solid rgba(180, 160, 140, 0.2) !important;
-  border-radius: 16px !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08) !important;
+  background: var(--bg-card) !important;
+  backdrop-filter: none !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lg) !important;
+  font-weight: 500 !important;
 }
 
 .leaflet-popup-tip {
-  background: rgba(255, 252, 245, 0.95) !important;
-  border: 1px solid rgba(180, 160, 140, 0.2) !important;
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border) !important;
 }
 
 .leaflet-popup-close-button {
-  color: #8a7a6a !important;
+  color: var(--text-tertiary) !important;
 }
 
 .leaflet-control-zoom {
   border: none !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+  box-shadow: var(--shadow-md) !important;
 }
 
 .leaflet-control-zoom a {
-  background: rgba(255, 252, 245, 0.9) !important;
-  backdrop-filter: blur(8px) !important;
-  color: #3d352e !important;
-  border: 1px solid rgba(180, 160, 140, 0.2) !important;
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important;
+  font-weight: 600 !important;
 }
 
 .leaflet-control-zoom a:hover {
-  background: rgba(245, 240, 235, 0.95) !important;
+  background: var(--bg-secondary) !important;
 }
 
 .leaflet-control-attribution {
-  background: rgba(245, 240, 235, 0.6) !important;
-  backdrop-filter: blur(8px) !important;
-  color: #8a7a6a !important;
+  background: rgba(255, 255, 255, 0.8) !important;
+  color: var(--text-tertiary) !important;
   font-size: 10px !important;
 }
 
 .leaflet-control-attribution a {
-  color: #a08060 !important;
+  color: var(--text-secondary) !important;
 }
 
-/* ─── Custom scrollbar ───────────────────────────────────────────────────── */
-
-::-webkit-scrollbar {
-  width: 6px;
+/* ─── Animations (minimal) ─────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-::-webkit-scrollbar-track {
-  background: #f5f0eb;
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(180, 160, 140, 0.3);
-  border-radius: 3px;
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(180, 160, 140, 0.5);
+.fade-in {
+  animation: fadeIn 200ms ease-out;
+}
+
+.slide-up {
+  animation: slideUp 250ms ease-out;
+}
+
+.scale-in {
+  animation: scaleIn 200ms ease-out;
 }

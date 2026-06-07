@@ -1,9 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 
-/**
- * Searchable airport input with autocomplete dropdown.
- * Filters airports by code, city, or country as you type.
- */
 export default function AirportSearch({ airports, value, onChange, placeholder, label, disabled }) {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -11,7 +7,6 @@ export default function AirportSearch({ airports, value, onChange, placeholder, 
   const inputRef = useRef(null);
   const dropdownRef = useRef(null);
 
-  // Update the displayed label when value changes externally
   useEffect(() => {
     if (value) {
       const airport = airports.find(a => a.code === value);
@@ -23,7 +18,6 @@ export default function AirportSearch({ airports, value, onChange, placeholder, 
     }
   }, [value, airports]);
 
-  // Filter airports based on query
   const filtered = query.trim()
     ? airports.filter(a => {
         const q = query.toLowerCase();
@@ -45,7 +39,6 @@ export default function AirportSearch({ airports, value, onChange, placeholder, 
     const val = e.target.value;
     setQuery(val);
     setIsOpen(true);
-    // Clear selection if user is typing something new
     if (val && !airports.find(a => a.code === val.toUpperCase())) {
       onChange('');
     }
@@ -55,7 +48,6 @@ export default function AirportSearch({ airports, value, onChange, placeholder, 
     if (query) setIsOpen(true);
   }, [query]);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target) &&
@@ -71,7 +63,6 @@ export default function AirportSearch({ airports, value, onChange, placeholder, 
     };
   }, []);
 
-  // Keyboard navigation
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Escape') {
       setIsOpen(false);
@@ -84,7 +75,7 @@ export default function AirportSearch({ airports, value, onChange, placeholder, 
 
   return (
     <div className="relative">
-      <label className="block text-sm text-[#8a7a6a] mb-1">{label}</label>
+      {label && <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">{label}</label>}
       <div className="relative">
         <input
           ref={inputRef}
@@ -97,13 +88,12 @@ export default function AirportSearch({ airports, value, onChange, placeholder, 
           disabled={disabled}
           autoComplete="off"
           spellCheck={false}
-          className="w-full px-3 py-2.5 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] placeholder-[#a09080] focus:outline-none focus:border-[#c4a882] focus:ring-2 focus:ring-[#c4a882]/20 transition-all disabled:bg-[#f5f0eb] disabled:text-[#a09080]"
+          className="w-full h-11 px-3.5 bg-white border border-[var(--border)] rounded-[var(--radius-sm)] text-sm font-medium text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-light)] disabled:bg-[var(--bg-secondary)] disabled:text-[var(--text-tertiary)] transition-all"
         />
-        {/* Clear button */}
         {value && !disabled && (
           <button
             onClick={() => { onChange(''); setQuery(''); setSelectedLabel(''); inputRef.current?.focus(); }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-[#a09080] hover:text-[#8a7a6a] rounded-full hover:bg-[#ede6dc] transition-colors"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] rounded-[var(--radius-sm)] hover:bg-[var(--bg-secondary)] transition-colors"
             tabIndex={-1}
             type="button"
           >
@@ -111,33 +101,29 @@ export default function AirportSearch({ airports, value, onChange, placeholder, 
           </button>
         )}
       </div>
-
-      {/* Dropdown */}
       {isOpen && query && filtered.length > 0 && (
         <div
           ref={dropdownRef}
-          className="absolute z-50 mt-1 w-full bg-white border border-[#e0d5c8] rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.1)] max-h-60 overflow-y-auto"
+          className="absolute z-50 mt-1 w-full bg-white border border-[var(--border)] rounded-[var(--radius-md)] shadow-[var(--shadow-popup)] max-h-60 overflow-y-auto scale-in"
         >
           {filtered.map((airport) => (
             <button
               key={airport.code}
               onClick={() => handleSelect(airport)}
-              className="w-full text-left px-3 py-2.5 hover:bg-[#f5f0eb] transition-colors border-b border-[#e0d5c8]/50 last:border-b-0 flex items-center justify-between"
+              className="w-full text-left px-3.5 py-2.5 hover:bg-[var(--bg-secondary)] transition-colors flex items-center justify-between"
               type="button"
             >
               <div>
-                <span className="font-bold text-[#3d352e]">{airport.code}</span>
-                <span className="text-[#8a7a6a] text-sm ml-2">{airport.city}, {airport.country}</span>
+                <span className="font-semibold text-sm text-[var(--text-primary)]">{airport.code}</span>
+                <span className="text-xs text-[var(--text-secondary)] ml-2">{airport.city}, {airport.country}</span>
               </div>
-              <span className="text-xs text-[#a09080]">{airport.name}</span>
+              <span className="text-[11px] text-[var(--text-tertiary)]">{airport.name}</span>
             </button>
           ))}
         </div>
       )}
-
-      {/* No results */}
       {isOpen && query && filtered.length === 0 && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-[#e0d5c8] rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.1)] p-3 text-sm text-[#a09080] text-center">
+        <div className="absolute z-50 mt-1 w-full bg-white border border-[var(--border)] rounded-[var(--radius-md)] shadow-[var(--shadow-popup)] p-3 text-sm text-[var(--text-tertiary)] text-center scale-in">
           No airports found for "{query}"
         </div>
       )}
