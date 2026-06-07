@@ -10,16 +10,18 @@ const planeIcon = L.divIcon({
   className: 'plane-marker',
   html: `<div style="
     width: 32px; height: 32px;
-    background: #1a73e8;
+    background: #c4a882;
     border: 2px solid white;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 16px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    font-size: 14px;
+    font-weight: bold;
+    color: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     transform: rotate(-45deg);
-  ">✈</div>`,
+  ">P</div>`,
   iconSize: [32, 32],
   iconAnchor: [16, 16],
 });
@@ -28,15 +30,17 @@ const airportIcon = L.divIcon({
   className: 'airport-marker',
   html: `<div style="
     width: 24px; height: 24px;
-    background: #f59e0b;
+    background: #b89978;
     border: 2px solid white;
     border-radius: 4px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-  ">📍</div>`,
+    font-size: 10px;
+    font-weight: bold;
+    color: white;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  ">A</div>`,
   iconSize: [24, 24],
   iconAnchor: [12, 12],
 });
@@ -56,14 +60,14 @@ function FitBounds({ bounds }) {
 // ─── Countdown Timer ─────────────────────────────────────────────────────────
 
 function CountdownTimer({ seconds }) {
-  if (seconds <= 0) return <span className="text-red-400 font-bold">CLOSED</span>;
+  if (seconds <= 0) return <span className="text-[#c0392b] font-bold">CLOSED</span>;
 
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
 
   return (
-    <span className="font-mono text-lg font-bold text-emerald-300">
+    <span className="font-mono text-lg font-bold text-[#c4a882]">
       {String(h).padStart(2, '0')}:{String(m).padStart(2, '0')}:{String(s).padStart(2, '0')}
     </span>
   );
@@ -73,21 +77,21 @@ function CountdownTimer({ seconds }) {
 
 function PrayerTimeline({ prayerTimes, currentPrayer }) {
   const order = [
-    { key: 'fajr', label: 'Fajr', icon: '🌅' },
-    { key: 'sunrise', label: 'Sunrise', icon: '☀️' },
-    { key: 'dhuhr', label: 'Dhuhr', icon: '🌞' },
-    { key: 'asr', label: 'Asr', icon: '🌤' },
-    { key: 'maghrib', label: 'Maghrib', icon: '🌇' },
-    { key: 'isha', label: 'Isha', icon: '🌙' },
+    { key: 'fajr', label: 'Fajr', icon: 'F' },
+    { key: 'sunrise', label: 'Sunrise', icon: 'S' },
+    { key: 'dhuhr', label: 'Dhuhr', icon: 'D' },
+    { key: 'asr', label: 'Asr', icon: 'A' },
+    { key: 'maghrib', label: 'Maghrib', icon: 'M' },
+    { key: 'isha', label: 'Isha', icon: 'I' },
   ];
 
   return (
-    <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl p-4 transition-all duration-500 hover:border-white/20">
-      <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">
-        <span>🕌</span> Prayer Timeline
+    <div className="bg-white/70 backdrop-blur-xl border border-[#e0d5c8] shadow-[0_8px_32px_0_rgba(0,0,0,0.06)] rounded-3xl p-4 transition-all duration-500 hover:border-[#d0c0b0]">
+      <h3 className="text-lg font-semibold text-[#3d352e] mb-3">
+        Prayer Timeline
       </h3>
       <div className="relative pl-6">
-        <div className="absolute left-[8px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-emerald-500/60 via-blue-500/60 to-emerald-500/60 shadow-[0_0_8px_rgba(16,185,129,0.3)]" />
+        <div className="absolute left-[8px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-[#c4a882]/60 via-[#b89978]/60 to-[#c4a882]/60 shadow-[0_0_8px_rgba(196,168,130,0.3)]" />
         {order.map(({ key, label, icon }, idx) => {
           const time = prayerTimes[key];
           const isCurrent = currentPrayer?.current?.name === key;
@@ -102,24 +106,26 @@ function PrayerTimeline({ prayerTimes, currentPrayer }) {
               key={key}
               className={`flex items-center justify-between p-3 rounded-xl transition-all duration-300 ${
                 isCurrent
-                  ? 'bg-slate-900/60 backdrop-blur-2xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl border-emerald-500/40 animate-neon-pulse'
+                  ? 'bg-white/80 backdrop-blur-2xl border border-[#e0d5c8] shadow-[0_8px_32px_0_rgba(0,0,0,0.06)] rounded-3xl border-[#c4a882]/40'
                   : isPast
                   ? 'opacity-40'
-                  : 'hover:bg-white/5'
+                  : 'hover:bg-[#ede6dc]/50'
               }`}
             >
               <div className="flex items-center gap-3">
-                <span className="text-lg">{icon}</span>
-                <span className={`font-medium ${isCurrent ? 'text-emerald-300' : 'text-gray-300'}`}>
+                <div className="w-7 h-7 rounded-full bg-[#ede6dc] flex items-center justify-center text-xs font-bold text-[#8a7a6a]">
+                  {icon}
+                </div>
+                <span className={`font-medium ${isCurrent ? 'text-[#c4a882]' : 'text-[#3d352e]'}`}>
                   {label}
                 </span>
               </div>
               <div className="flex items-center gap-3">
-                <span className={`font-mono ${isCurrent ? 'text-white font-bold' : 'text-gray-400'}`}>
+                <span className={`font-mono ${isCurrent ? 'text-[#3d352e] font-bold' : 'text-[#8a7a6a]'}`}>
                   {hoursToTimeString(time)}
                 </span>
                 {isCurrent && (
-                  <span className="px-2 py-0.5 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white text-xs rounded-full font-bold animate-pulse shadow-lg shadow-emerald-500/30">
+                  <span className="px-2 py-0.5 bg-gradient-to-r from-[#c4a882] to-[#b89978] text-white text-xs rounded-full font-bold shadow-lg shadow-[#c4a882]/30">
                     NOW
                   </span>
                 )}
@@ -130,13 +136,13 @@ function PrayerTimeline({ prayerTimes, currentPrayer }) {
       </div>
 
       {currentPrayer && (
-        <div className="mt-4 p-3 bg-slate-900/50 rounded-xl border border-white/5">
-          <div className="text-sm text-gray-400 mb-1">
+        <div className="mt-4 p-3 bg-[#f5f0eb] rounded-xl border border-[#e0d5c8]">
+          <div className="text-sm text-[#8a7a6a] mb-1">
             {currentPrayer.current?.label} window closes in:
           </div>
           <CountdownTimer seconds={currentPrayer.timeUntilNext} />
           {currentPrayer.next && (
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-[#a09080] mt-1">
               Next: {currentPrayer.next.label} at {hoursToTimeString(currentPrayer.next.time)}
             </div>
           )}
@@ -160,48 +166,48 @@ function FlightInfoPanel({ flightState }) {
   const totalM = (durationMinutes || 0) % 60;
 
   return (
-    <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl p-4 transition-all duration-500 hover:border-white/20">
-      <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">
-        <span>✈️</span> {flightCode}
+    <div className="bg-white/70 backdrop-blur-xl border border-[#e0d5c8] shadow-[0_8px_32px_0_rgba(0,0,0,0.06)] rounded-3xl p-4 transition-all duration-500 hover:border-[#d0c0b0]">
+      <h3 className="text-lg font-semibold text-[#3d352e] mb-3">
+        {flightCode}
       </h3>
 
       {/* Route */}
-      <div className="flex items-center justify-between mb-4 p-3 bg-slate-900/50 rounded-xl border border-white/5">
+      <div className="flex items-center justify-between mb-4 p-3 bg-[#f5f0eb] rounded-xl border border-[#e0d5c8]">
         <div className="text-center">
-          <div className="text-xs text-gray-500">{departure?.code}</div>
-          <div className="text-sm font-bold text-white">{departure?.city}</div>
+          <div className="text-xs text-[#a09080]">{departure?.code}</div>
+          <div className="text-sm font-bold text-[#3d352e]">{departure?.city}</div>
         </div>
-        <div className="text-gray-500 text-lg">→</div>
+        <div className="text-[#a09080] text-lg">→</div>
         <div className="text-center">
-          <div className="text-xs text-gray-500">{arrival?.code}</div>
-          <div className="text-sm font-bold text-white">{arrival?.city}</div>
+          <div className="text-xs text-[#a09080]">{arrival?.code}</div>
+          <div className="text-sm font-bold text-[#3d352e]">{arrival?.city}</div>
         </div>
       </div>
 
       {/* Status badges */}
       <div className="flex flex-wrap gap-2 mb-3">
         <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-          state === 'pre-takeoff' ? 'bg-yellow-900/50 text-yellow-300 border border-yellow-600/50' :
-          state === 'in-flight' ? 'bg-emerald-900/50 text-emerald-300 border border-emerald-600/50' :
-          'bg-blue-900/50 text-blue-300 border border-blue-600/50'
+          state === 'pre-takeoff' ? 'bg-[#f5f0eb] text-[#b89978] border border-[#e0d5c8]' :
+          state === 'in-flight' ? 'bg-[#f5f0eb] text-[#c4a882] border border-[#e0d5c8]' :
+          'bg-[#f5f0eb] text-[#a08060] border border-[#e0d5c8]'
         }`}>
-          {state === 'pre-takeoff' ? '🛫 Pre-Takeoff' : state === 'in-flight' ? '🛩 In-Flight' : '🛬 Landed'}
+          {state === 'pre-takeoff' ? 'Pre-Takeoff' : state === 'in-flight' ? 'In-Flight' : 'Landed'}
         </span>
         {state === 'pre-takeoff' && (
           <>
-            <span className="px-2 py-1 bg-gray-700 text-gray-300 rounded-full text-xs">{gate}</span>
+            <span className="px-2 py-1 bg-[#ede6dc] text-[#8a7a6a] rounded-full text-xs">{gate}</span>
             <span className={`px-2 py-1 rounded-full text-xs ${
-              boardingStatus === 'On Time' ? 'bg-emerald-900/50 text-emerald-300' : 'bg-red-900/50 text-red-300'
+              boardingStatus === 'On Time' ? 'bg-[#f5f0eb] text-[#a08060] border border-[#e0d5c8]' : 'bg-[#f0e0d0] text-[#8a5a4a] border border-[#d0b0a0]'
             }`}>
               {boardingStatus}
             </span>
             {delayMinutes > 0 && (
-              <span className="px-2 py-1 bg-red-900/50 text-red-300 rounded-full text-xs">
+              <span className="px-2 py-1 bg-[#f0e0d0] text-[#8a5a4a] rounded-full text-xs border border-[#d0b0a0]">
                 +{delayMinutes} min delay
               </span>
             )}
             {runwayQueue > 0 && (
-              <span className="px-2 py-1 bg-yellow-900/50 text-yellow-300 rounded-full text-xs">
+              <span className="px-2 py-1 bg-[#f5f0eb] text-[#b89978] rounded-full text-xs border border-[#e0d5c8]">
                 #{runwayQueue} in queue
               </span>
             )}
@@ -212,21 +218,21 @@ function FlightInfoPanel({ flightState }) {
       {/* Flight metrics */}
       {state === 'in-flight' && (
         <div className="grid grid-cols-2 gap-2 mb-3">
-          <div className="p-2 bg-gray-900/50 rounded-lg">
-            <div className="text-xs text-gray-500">Altitude</div>
-            <div className="text-sm font-bold text-white">{Math.round(altitude * 3.28084).toLocaleString()} ft</div>
+          <div className="p-2 bg-[#f5f0eb] rounded-lg">
+            <div className="text-xs text-[#a09080]">Altitude</div>
+            <div className="text-sm font-bold text-[#3d352e]">{Math.round(altitude * 3.28084).toLocaleString()} ft</div>
           </div>
-          <div className="p-2 bg-gray-900/50 rounded-lg">
-            <div className="text-xs text-gray-500">Ground Speed</div>
-            <div className="text-sm font-bold text-white">{Math.round(groundSpeed * 0.539957).toLocaleString()} kn</div>
+          <div className="p-2 bg-[#f5f0eb] rounded-lg">
+            <div className="text-xs text-[#a09080]">Ground Speed</div>
+            <div className="text-sm font-bold text-[#3d352e]">{Math.round(groundSpeed * 0.539957).toLocaleString()} kn</div>
           </div>
-          <div className="p-2 bg-gray-900/50 rounded-lg">
-            <div className="text-xs text-gray-500">Elapsed</div>
-            <div className="text-sm font-bold text-white">{elapsedH}h {elapsedM}m</div>
+          <div className="p-2 bg-[#f5f0eb] rounded-lg">
+            <div className="text-xs text-[#a09080]">Elapsed</div>
+            <div className="text-sm font-bold text-[#3d352e]">{elapsedH}h {elapsedM}m</div>
           </div>
-          <div className="p-2 bg-gray-900/50 rounded-lg">
-            <div className="text-xs text-gray-500">Remaining</div>
-            <div className="text-sm font-bold text-white">{totalH - elapsedH}h {Math.max(0, totalM - elapsedM)}m</div>
+          <div className="p-2 bg-[#f5f0eb] rounded-lg">
+            <div className="text-xs text-[#a09080]">Remaining</div>
+            <div className="text-sm font-bold text-[#3d352e]">{totalH - elapsedH}h {Math.max(0, totalM - elapsedM)}m</div>
           </div>
         </div>
       )}
@@ -234,14 +240,14 @@ function FlightInfoPanel({ flightState }) {
       {/* Progress bar */}
       {state === 'in-flight' && (
         <div className="mb-3">
-          <div className="flex justify-between text-xs text-gray-500 mb-1">
+          <div className="flex justify-between text-xs text-[#a09080] mb-1">
             <span>{departure?.code}</span>
             <span>{progressPct}%</span>
             <span>{arrival?.code}</span>
           </div>
-          <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+          <div className="w-full bg-[#ede6dc] rounded-full h-2 overflow-hidden">
             <div
-              className="bg-gradient-to-r from-emerald-500 to-blue-500 h-full rounded-full transition-all duration-1000"
+              className="bg-gradient-to-r from-[#c4a882] to-[#b89978] h-full rounded-full transition-all duration-1000"
               style={{ width: `${progressPct}%` }}
             />
           </div>
@@ -250,7 +256,7 @@ function FlightInfoPanel({ flightState }) {
 
       {/* Takeoff / arrival times */}
       {takeoffTime && (
-        <div className="text-xs text-gray-500">
+        <div className="text-xs text-[#a09080]">
           Takeoff: {takeoffTime.toLocaleTimeString()}
           {estimatedArrival && ` | ETA: ${estimatedArrival.toLocaleTimeString()}`}
         </div>
@@ -365,12 +371,12 @@ export default function FlightTracker() {
   return (
     <div className="min-h-screen">
       {/* Header */}
-      <div className="bg-slate-900/40 backdrop-blur-xl border-b border-white/5 p-4">
+      <div className="bg-white/70 backdrop-blur-xl border-b border-[#e0d5c8] p-4">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">
-            <span>✈️</span> In-Flight Prayer Tracker
+          <h1 className="text-2xl font-bold text-[#3d352e]">
+            In-Flight Prayer Tracker
           </h1>
-          <p className="text-gray-400 text-sm mt-1">
+          <p className="text-[#8a7a6a] text-sm mt-1">
             Track prayer times during your flight with real-time position updates
           </p>
         </div>
@@ -378,38 +384,38 @@ export default function FlightTracker() {
 
       {/* Input Form */}
       <div className="max-w-7xl mx-auto p-4">
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl p-4 mb-4 transition-all duration-500 hover:border-white/20">
+        <div className="bg-white/70 backdrop-blur-xl border border-[#e0d5c8] shadow-[0_8px_32px_0_rgba(0,0,0,0.06)] rounded-3xl p-4 mb-4 transition-all duration-500 hover:border-[#d0c0b0]">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Flight Code</label>
+              <label className="block text-sm text-[#8a7a6a] mb-1">Flight Code</label>
               <input
                 type="text"
                 value={flightCode}
                 onChange={(e) => setFlightCode(e.target.value.toUpperCase())}
                 placeholder="e.g., QR774"
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+                className="w-full px-3 py-2 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] placeholder-[#a09080] focus:outline-none focus:border-[#c4a882]"
                 disabled={isRunning}
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Departure Date</label>
+              <label className="block text-sm text-[#8a7a6a] mb-1">Departure Date</label>
               <input
                 type="date"
                 value={departureDate}
                 onChange={(e) => setDepartureDate(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-emerald-500"
+                className="w-full px-3 py-2 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] focus:outline-none focus:border-[#c4a882]"
                 disabled={isRunning}
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Quick Select</label>
+              <label className="block text-sm text-[#8a7a6a] mb-1">Quick Select</label>
               <select
                 onChange={(e) => {
                   if (e.target.value) {
                     setFlightCode(e.target.value);
                   }
                 }}
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-emerald-500"
+                className="w-full px-3 py-2 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] focus:outline-none focus:border-[#c4a882]"
                 disabled={isRunning}
                 value=""
               >
@@ -425,32 +431,32 @@ export default function FlightTracker() {
               {!isRunning ? (
                 <button
                   onClick={startTracking}
-                  className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-colors"
+                  className="w-full px-4 py-2 bg-[#c4a882] hover:bg-[#b89978] text-white font-bold rounded-lg transition-colors"
                 >
-                  🚀 Start Tracking
+                  Start Tracking
                 </button>
               ) : (
                 <>
                   {session && session.state() === 'pre-takeoff' && (
                     <button
                       onClick={handleTakeoff}
-                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors"
+                      className="flex-1 px-4 py-2 bg-[#b89978] hover:bg-[#a08060] text-white font-bold rounded-lg transition-colors"
                     >
-                      🛫 Take Off
+                      Take Off
                     </button>
                   )}
                   <button
                     onClick={stopTracking}
-                    className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg transition-colors"
+                    className="flex-1 px-4 py-2 bg-[#d0b0a0] hover:bg-[#c0a090] text-white font-bold rounded-lg transition-colors"
                   >
-                    ⏹ Stop
+                    Stop
                   </button>
                 </>
               )}
             </div>
           </div>
           {error && (
-            <div className="mt-3 p-3 bg-red-900/50 border border-red-600/50 rounded-lg text-red-300 text-sm">
+            <div className="mt-3 p-3 bg-[#f0e0d0] border border-[#d0b0a0] rounded-lg text-[#8a5a4a] text-sm">
               {error}
             </div>
           )}
@@ -461,7 +467,7 @@ export default function FlightTracker() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Map */}
             <div className="lg:col-span-2">
-              <div className="bg-gray-800/80 backdrop-blur rounded-xl overflow-hidden border border-gray-700" style={{ height: '500px' }}>
+              <div className="bg-white/70 backdrop-blur rounded-xl overflow-hidden border border-[#e0d5c8] shadow-[0_8px_32px_0_rgba(0,0,0,0.06)]" style={{ height: '500px' }}>
                 <MapContainer
                   center={[flightState.position?.lat || 0, flightState.position?.lng || 0]}
                   zoom={4}
@@ -479,7 +485,7 @@ export default function FlightTracker() {
                     <Polyline
                       positions={flightState.pathPoints.map(p => [p.lat, p.lng])}
                       pathOptions={{
-                        color: '#3b82f6',
+                        color: '#c4a882',
                         weight: 3,
                         opacity: 0.6,
                         dashArray: '10, 10',
@@ -494,7 +500,7 @@ export default function FlightTracker() {
                         <div className="text-sm">
                           <strong>{flightState.departure.code}</strong> — {flightState.departure.city}
                           <br />
-                          <span className="text-gray-500">Departure</span>
+                          <span className="text-[#a09080]">Departure</span>
                         </div>
                       </Popup>
                     </Marker>
@@ -507,7 +513,7 @@ export default function FlightTracker() {
                         <div className="text-sm">
                           <strong>{flightState.arrival.code}</strong> — {flightState.arrival.city}
                           <br />
-                          <span className="text-gray-500">Arrival</span>
+                          <span className="text-[#a09080]">Arrival</span>
                         </div>
                       </Popup>
                     </Marker>
@@ -542,9 +548,9 @@ export default function FlightTracker() {
         {/* Empty state */}
         {!flightState && !error && (
           <div className="text-center py-16">
-            <div className="text-6xl mb-4">✈️</div>
-            <h2 className="text-xl font-bold text-white mb-2">Ready to Track Your Flight</h2>
-            <p className="text-gray-400">
+            <div className="text-5xl mb-4 text-[#c4a882] font-serif">M</div>
+            <h2 className="text-xl font-bold text-[#3d352e] mb-2">Ready to Track Your Flight</h2>
+            <p className="text-[#8a7a6a]">
               Enter a flight code above to start tracking prayer times during your journey.
               <br />
               Try <strong>QR774</strong> (Doha → Houston) or select from the dropdown.
