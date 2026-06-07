@@ -61,7 +61,11 @@ function dhuhrMinutes(julianDay, longitude, timezone) {
   const RA = atan2(sin(L) * cos(e), cos(L)) / 15;
   const EqT = q / 15 - fixHour(RA);
   const noon = 12 + EqT;
-  return noon - longitude / 15 - timezone;
+  // Solar noon at given longitude in hours UTC:
+  //   noon_utc = noon - longitude/15
+  // Then convert to local time: noon_local = noon_utc + timezone
+  // Return local dhuhr time
+  return noon - longitude / 15 + timezone;
 }
 
 function sunDeclination(julianDay) {
