@@ -677,6 +677,33 @@ export function calculateQasrStatus(lat, lng, cityName) {
 }
 
 /**
+ * Calculate the distance from a point to the Hadd al-Tarakhkhus boundary.
+ * Returns negative if inside (distance remaining), positive if outside (distance past).
+ */
+export function calculateDistanceToHadd(lat, lng, cityName) {
+  const city = getUrfBoundary(cityName);
+  if (!city) return null;
+
+  const haddPolygon = generateHaddBoundary(cityName);
+  if (haddPolygon && haddPolygon.length >= 3) {
+    const insideHadd = pointInPolygon([lat, lng], haddPolygon);
+    const distToHadd = distanceToPolygonBoundary([lat, lng], haddPolygon);
+    return insideHadd ? -distToHadd : distToHadd;
+  }
+
+  // Fallback: circle-based
+  let maxDist = 0;
+  for (let i = 0; i < city.boundary.length; i++) {
+    const [blat, blng] = city.boundary[i];
+    const dist = haversineDistance(city.center[0], city.center[1], blat, blng);
+    if (dist > maxDist) maxDist = dist;
+  }
+  const haddRadius = maxDist + HADD_AL_TARAKHKHUS_KM;
+  const pointDist = haversineDistance(city.center[0], city.center[1], lat, lng);
+  return pointDist - haddRadius;
+}
+
+/**
  * Generate the Hadd al-Tarakhkhus boundary.
  */
 export function generateHaddBoundary(cityName) {
@@ -738,4 +765,3 @@ export function generateUrfPolygon(cityName) {
   if (!city) return null;
   return city.boundary;
 }
-

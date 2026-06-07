@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Polygon, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import {
@@ -13,6 +13,7 @@ import {
   fetchCityBoundary,
   findCityForLocation,
   saveUserCity,
+  calculateDistanceToHadd,
 } from '../utils/geoUtils';
 
 // ─── Custom Icons ────────────────────────────────────────────────────────────
@@ -28,6 +29,20 @@ const userLocationIcon = L.divIcon({
   "></div>`,
   iconSize: [20, 20],
   iconAnchor: [10, 10],
+});
+
+const monitoringIcon = L.divIcon({
+  className: 'monitoring-marker',
+  html: `<div style="
+    width: 24px; height: 24px;
+    background: #f59e0b;
+    border: 3px solid white;
+    border-radius: 50%;
+    box-shadow: 0 0 0 4px rgba(245,158,11,0.4), 0 0 20px rgba(245,158,11,0.3);
+    animation: pulse 1.5s infinite;
+  "></div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
 });
 
 const cityCenterIcon = L.divIcon({
@@ -53,6 +68,42 @@ function MapController({ center, zoom }) {
     }
   }, [map, center, zoom]);
   return null;
+}
+
+// ─── Audio Alert ─────────────────────────────────────────────────────────────
+
+function playAlertSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+    oscillator.frequency.setValueAtTime(660, ctx.currentTime + 0.15);
+    oscillator.frequency.setValueAtTime(440, ctx.currentTime + 0.3);
+    gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+    oscillator.start(ctx.currentTime);
+    oscillator.stop(ctx.currentTime + 0.6);
+  } catch (e) {
+    // Audio not available
+  }
+}
+
+// ─── Send Browser Notification ───────────────────────────────────────────────
+
+async function sendNotification(title, body) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'granted') {
+    new Notification(title, { body, icon: '/favicon.svg' });
+  } else if (Notification.permission !== 'denied') {
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      new Notification(title, { body, icon: '/favicon.svg' });
+    }
+  }
 }
 
 // ─── Verdict Questionnaire ───────────────────────────────────────────────────
@@ -297,7 +348,157 @@ export default function QasrMap() {
   const [isLoading, setIsLoading] = useState(false);
   const [showQuestionnaire, setShowQuestionnaire] = useState(false);
   const [detectedCityName, setDetectedCityName] = useState('');
+
+  // Driving monitor state
+  const [isMonitoring, setIsMonitoring] = useState(false);
+  const [haddAlerted, setHaddAlerted] = useState(false);
+  const [distanceToHadd, setDistanceToHadd] = useState(null);
+  const [monitorPath, setMonitorPath] = useState([]);
+  const [simulating, setSimulating] = useState(false);
+  const watchIdRef = useRef(null);
+  const simIntervalRef = useRef(null);
+  const simPosRef = useRef(null);
+  const prevStatusRef = useRef(null);
+
   const supportedCities = getSupportedCities();
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+      if (simIntervalRef.current !== null) {
+        clearInterval(simIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // ─── Driving Monitor Logic ───────────────────────────────────────────────
+
+  const handlePositionUpdate = useCallback((lat, lng) => {
+    setLocation({ lat, lng });
+    setMonitorPath(prev => [...prev, [lat, lng]]);
+
+    if (cityName) {
+      const status = calculateQasrStatus(lat, lng, cityName);
+      setQasrStatus(status);
+
+      const dist = calculateDistanceToHadd(lat, lng, cityName);
+      setDistanceToHadd(dist);
+
+      // Check for Hadd crossing
+      if (status.status === 'traveler' && !haddAlerted) {
+        setHaddAlerted(true);
+        playAlertSound();
+        sendNotification(
+          '🚀 Hadd al-Tarakhkhus Crossed!',
+          `You are now a Traveler (Musafir). Prayers: Qasr (2 Rak'ahs). Fasting: Invalid (Qada required).`
+        );
+      }
+
+      // Re-alert if they were inside and cross again
+      if (prevStatusRef.current === 'resident' && status.status === 'traveler') {
+        setHaddAlerted(false);
+      }
+      prevStatusRef.current = status.status;
+    }
+  }, [cityName, haddAlerted]);
+
+  const startMonitoring = useCallback(() => {
+    if (!cityName) {
+      setError('Please select a city or use your current location first.');
+      return;
+    }
+
+    setIsMonitoring(true);
+    setHaddAlerted(false);
+    setMonitorPath([]);
+    setDistanceToHadd(null);
+    prevStatusRef.current = null;
+
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    // Start watching position
+    if (navigator.geolocation) {
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          handlePositionUpdate(pos.coords.latitude, pos.coords.longitude);
+        },
+        (err) => {
+          console.warn('Watch position error:', err.message);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+      );
+    }
+  }, [cityName, handlePositionUpdate]);
+
+  const stopMonitoring = useCallback(() => {
+    setIsMonitoring(false);
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    if (simIntervalRef.current !== null) {
+      clearInterval(simIntervalRef.current);
+      simIntervalRef.current = null;
+    }
+    setSimulating(false);
+  }, []);
+
+  // ─── Simulation Mode ────────────────────────────────────────────────────
+
+  const startSimulation = useCallback(() => {
+    if (!cityName) {
+      setError('Please select a city first.');
+      return;
+    }
+
+    const cityData = getUrfBoundary(cityName);
+    if (!cityData) return;
+
+    // Start from city center and drive outward in a straight line
+    const centerLat = cityData.center[0];
+    const centerLng = cityData.center[1];
+    simPosRef.current = { lat: centerLat, lng: centerLng };
+
+    setIsMonitoring(true);
+    setHaddAlerted(false);
+    setMonitorPath([[centerLat, centerLng]]);
+    setDistanceToHadd(null);
+    setSimulating(true);
+    prevStatusRef.current = null;
+
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    // Move outward at ~1 km per tick (every 500ms = ~120 km/h simulated)
+    const bearing = 270; // West direction
+    let tickCount = 0;
+
+    simIntervalRef.current = setInterval(() => {
+      tickCount++;
+      const speedKmPerTick = 1.0; // 1 km per 500ms = 120 km/h
+      const [newLat, newLng] = [
+        simPosRef.current.lat + (speedKmPerTick / 111.32) * Math.cos(bearing * Math.PI / 180),
+        simPosRef.current.lng - (speedKmPerTick / (111.32 * Math.cos(simPosRef.current.lat * Math.PI / 180))) * Math.sin(bearing * Math.PI / 180),
+      ];
+      simPosRef.current = { lat: newLat, lng: newLng };
+      handlePositionUpdate(newLat, newLng);
+
+      // Stop after 60 ticks (60 km simulated)
+      if (tickCount >= 60) {
+        clearInterval(simIntervalRef.current);
+        simIntervalRef.current = null;
+        setSimulating(false);
+      }
+    }, 500);
+  }, [cityName, handlePositionUpdate]);
 
   // Get user's current location
   const getCurrentLocation = useCallback(() => {
@@ -353,7 +554,6 @@ export default function QasrMap() {
           const boundaryData = await fetchCityBoundary(reverseCity, geoResult.state || '');
 
           if (boundaryData && boundaryData.boundary) {
-            // Save to user-contributed cache
             const newCityData = {
               center: boundaryData.center,
               boundary: boundaryData.boundary,
@@ -366,8 +566,6 @@ export default function QasrMap() {
             setError('');
             setDetectedCityName(`New city discovered: ${reverseCity}`);
           } else {
-            // Fallback: use the city center as a point
-            // This means the user can still see their location on the map
             setCityName('');
             setQasrStatus({
               isInsideUrf: null,
@@ -409,15 +607,31 @@ export default function QasrMap() {
   const urfPolygon = cityName ? generateUrfPolygon(cityName) : null;
   const haddBoundary = cityName ? generateHaddBoundary(cityName) : null;
 
-  // Colors: Urf = green (#22c55e), Hadd = gray (#6b7280)
-  const getStatusColors = () => {
-    return { urfColor: '#22c55e', haddColor: '#6b7280' };
-  };
-
-  const { urfColor, haddColor } = getStatusColors();
-
   return (
     <div className="min-h-screen bg-gray-900">
+      {/* Hadd Crossing Alert Banner */}
+      {haddAlerted && (
+        <div className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 p-4 shadow-lg animate-pulse">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🚀</span>
+              <div>
+                <h2 className="text-lg font-bold text-white">Hadd al-Tarakhkhus Crossed!</h2>
+                <p className="text-sm text-emerald-100">
+                  You are now a Traveler (Musafir). Prayers: Qasr (2 Rak'ahs). Fasting: Invalid (Qada required).
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setHaddAlerted(false)}
+              className="px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-gray-700 p-4">
         <div className="max-w-7xl mx-auto">
@@ -439,7 +653,7 @@ export default function QasrMap() {
               <label className="block text-sm text-gray-400 mb-1">Your Location</label>
               <button
                 onClick={getCurrentLocation}
-                disabled={isLoading}
+                disabled={isLoading || isMonitoring}
                 className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
               >
                 {isLoading ? (
@@ -464,6 +678,7 @@ export default function QasrMap() {
                 }}
                 className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-emerald-500"
                 value={cityName}
+                disabled={isMonitoring}
               >
                 <option value="">Select a city...</option>
                 {supportedCities.map((city) => (
@@ -544,9 +759,22 @@ export default function QasrMap() {
                   </Polygon>
                 )}
 
+                {/* Monitor path trail */}
+                {monitorPath.length > 1 && (
+                  <Polygon
+                    positions={monitorPath}
+                    pathOptions={{
+                      color: '#f59e0b',
+                      weight: 3,
+                      fillOpacity: 0,
+                      dashArray: '6, 4',
+                    }}
+                  />
+                )}
+
                 {/* User location marker */}
                 {location && (
-                  <Marker position={[location.lat, location.lng]} icon={userLocationIcon}>
+                  <Marker position={[location.lat, location.lng]} icon={isMonitoring ? monitoringIcon : userLocationIcon}>
                     <Popup>
                       <div className="text-sm">
                         <strong>Your Location</strong>
@@ -557,6 +785,16 @@ export default function QasrMap() {
                             <br />
                             <span className={qasrStatus.status === 'traveler' ? 'text-emerald-400' : 'text-blue-400'}>
                               Status: {qasrStatus.status === 'traveler' ? 'Traveler' : qasrStatus.status === 'resident' ? 'Resident' : 'Transition'}
+                            </span>
+                          </>
+                        )}
+                        {distanceToHadd != null && (
+                          <>
+                            <br />
+                            <span className="text-yellow-400">
+                              {distanceToHadd < 0
+                                ? `${Math.abs(distanceToHadd).toFixed(1)} km to Hadd`
+                                : `${distanceToHadd.toFixed(1)} km past Hadd`}
                             </span>
                           </>
                         )}
@@ -588,6 +826,12 @@ export default function QasrMap() {
                 <div className="w-3 h-3 bg-blue-500 rounded-full" />
                 <span>Your Location</span>
               </div>
+              {isMonitoring && (
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 bg-yellow-500 rounded-full animate-pulse" />
+                  <span>Monitoring</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -622,9 +866,78 @@ export default function QasrMap() {
                   {qasrStatus.cityName && <div>City: <span className="text-gray-300">{qasrStatus.cityName}</span></div>}
                   {qasrStatus.distanceKm != null && <div>Distance from boundary: <span className="text-gray-300">{Math.abs(qasrStatus.distanceKm).toFixed(1)} km</span></div>}
                   <div>Hadd al-Tarakhkhus: <span className="text-gray-300">{qasrStatus.haddDistance || HADD_AL_TARAKHKHUS_KM} km</span></div>
+                  {distanceToHadd != null && (
+                    <div>
+                      Distance to Hadd: <span className={distanceToHadd < 0 ? 'text-yellow-300' : 'text-emerald-300'}>
+                        {distanceToHadd < 0
+                          ? `${Math.abs(distanceToHadd).toFixed(1)} km remaining`
+                          : `${distanceToHadd.toFixed(1)} km past (Traveler)`}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
+
+            {/* Driving Monitor Controls */}
+            <div className="bg-gray-800/80 backdrop-blur rounded-xl p-4 border border-gray-700">
+              <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                <span>🚗</span> Driving Monitor
+              </h3>
+
+              {!isMonitoring ? (
+                <div className="space-y-2">
+                  <button
+                    onClick={startMonitoring}
+                    disabled={!cityName}
+                    className="w-full px-4 py-3 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
+                  >
+                    🟢 Start Monitoring
+                  </button>
+                  <button
+                    onClick={startSimulation}
+                    disabled={!cityName}
+                    className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
+                  >
+                    🧪 Simulate Drive (Desktop Test)
+                  </button>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {cityName
+                      ? 'Start monitoring to get notified when you cross the Hadd al-Tarakhkhus boundary. Use "Simulate Drive" to test on desktop.'
+                      : 'Select a city or use your current location first.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="w-3 h-3 bg-yellow-500 rounded-full animate-pulse"></span>
+                    <span className="text-yellow-300 font-bold">Monitoring Active</span>
+                  </div>
+                  {simulating && (
+                    <div className="text-xs text-purple-300">
+                      🧪 Simulation running — driving west at ~120 km/h
+                    </div>
+                  )}
+                  {distanceToHadd != null && (
+                    <div className={`p-2 rounded-lg text-center text-sm font-bold ${
+                      distanceToHadd < 0
+                        ? 'bg-yellow-900/30 text-yellow-300 border border-yellow-600/30'
+                        : 'bg-emerald-900/30 text-emerald-300 border border-emerald-600/30'
+                    }`}>
+                      {distanceToHadd < 0
+                        ? `📍 ${Math.abs(distanceToHadd).toFixed(1)} km until Hadd`
+                        : `🚀 ${distanceToHadd.toFixed(1)} km past Hadd`}
+                    </div>
+                  )}
+                  <button
+                    onClick={stopMonitoring}
+                    className="w-full px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg transition-colors"
+                  >
+                    ⏹ Stop Monitoring
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Disclaimer */}
             <div className="bg-yellow-900/20 border border-yellow-600/30 rounded-xl p-4">
