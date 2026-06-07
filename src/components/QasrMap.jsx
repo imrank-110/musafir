@@ -356,10 +356,7 @@ export default function QasrMap() {
   const [haddAlerted, setHaddAlerted] = useState(false);
   const [distanceToHadd, setDistanceToHadd] = useState(null);
   const [monitorPath, setMonitorPath] = useState([]);
-  const [simulating, setSimulating] = useState(false);
   const watchIdRef = useRef(null);
-  const simIntervalRef = useRef(null);
-  const simPosRef = useRef(null);
   const prevStatusRef = useRef(null);
 
   const supportedCities = getSupportedCities();
@@ -369,9 +366,6 @@ export default function QasrMap() {
     return () => {
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
-      }
-      if (simIntervalRef.current !== null) {
-        clearInterval(simIntervalRef.current);
       }
     };
   }, []);
@@ -444,63 +438,7 @@ export default function QasrMap() {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
-    if (simIntervalRef.current !== null) {
-      clearInterval(simIntervalRef.current);
-      simIntervalRef.current = null;
-    }
-    setSimulating(false);
   }, []);
-
-  // ─── Simulation Mode ────────────────────────────────────────────────────
-
-  const startSimulation = useCallback(() => {
-    if (!cityName) {
-      setError('Please select a city first.');
-      return;
-    }
-
-    const cityData = getUrfBoundary(cityName);
-    if (!cityData) return;
-
-    // Start from city center and drive outward in a straight line
-    const centerLat = cityData.center[0];
-    const centerLng = cityData.center[1];
-    simPosRef.current = { lat: centerLat, lng: centerLng };
-
-    setIsMonitoring(true);
-    setHaddAlerted(false);
-    setMonitorPath([[centerLat, centerLng]]);
-    setDistanceToHadd(null);
-    setSimulating(true);
-    prevStatusRef.current = null;
-
-    // Request notification permission
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-
-    // Move outward at ~1 km per tick (every 500ms = ~120 km/h simulated)
-    const bearing = 270; // West direction
-    let tickCount = 0;
-
-    simIntervalRef.current = setInterval(() => {
-      tickCount++;
-      const speedKmPerTick = 1.0; // 1 km per 500ms = 120 km/h
-      const [newLat, newLng] = [
-        simPosRef.current.lat + (speedKmPerTick / 111.32) * Math.cos(bearing * Math.PI / 180),
-        simPosRef.current.lng - (speedKmPerTick / (111.32 * Math.cos(simPosRef.current.lat * Math.PI / 180))) * Math.sin(bearing * Math.PI / 180),
-      ];
-      simPosRef.current = { lat: newLat, lng: newLng };
-      handlePositionUpdate(newLat, newLng);
-
-      // Stop after 60 ticks (60 km simulated)
-      if (tickCount >= 60) {
-        clearInterval(simIntervalRef.current);
-        simIntervalRef.current = null;
-        setSimulating(false);
-      }
-    }, 500);
-  }, [cityName, handlePositionUpdate]);
 
   // Get user's current location
   const getCurrentLocation = useCallback(() => {
@@ -891,16 +829,9 @@ export default function QasrMap() {
                   >
                     Start Monitoring
                   </button>
-                  <button
-                    onClick={startSimulation}
-                    disabled={!cityName}
-                    className="w-full px-4 py-2 bg-[#ede6dc] hover:bg-[#e0d5c8] disabled:bg-[#f5f0eb] disabled:text-[#a09080] text-[#3d352e] font-bold rounded-lg transition-colors"
-                  >
-                    Simulate Drive (Desktop Test)
-                  </button>
                   <p className="text-xs text-[#a09080] mt-2">
                     {cityName
-                      ? 'Start monitoring to get notified when you cross the Hadd al-Tarakhkhus boundary. Use "Simulate Drive" to test on desktop.'
+                      ? 'Start monitoring to get notified when you cross the Hadd al-Tarakhkhus boundary.'
                       : 'Select a city or use your current location first.'}
                   </p>
                 </div>
@@ -910,11 +841,6 @@ export default function QasrMap() {
                     <span className="w-3 h-3 bg-[#c4a882] rounded-full animate-pulse"></span>
                     <span className="text-[#c4a882] font-bold">Monitoring Active</span>
                   </div>
-                  {simulating && (
-                    <div className="text-xs text-[#b89978]">
-                      Simulation running - driving west at ~120 km/h
-                    </div>
-                  )}
                   {distanceToHadd != null && (
                     <div className={`p-2 rounded-lg text-center text-sm font-bold ${
                       distanceToHadd < 0
