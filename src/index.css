@@ -9,9 +9,22 @@
 body {
   margin: 0;
   padding: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
   background-color: #f5f0eb;
   color: #3d352e;
   overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ─── Mobile safe area overrides for sticky headers ──────────────────────── */
+
+.sticky {
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 /* ─── Background Animations ─────────────────────────────────────────────────── */

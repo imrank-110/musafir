@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Capacitor platform directories
+ios/
+android/
+capacitor.config.json
+
+.vercel

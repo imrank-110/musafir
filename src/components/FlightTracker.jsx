@@ -7,6 +7,7 @@ import {
   precomputeFlightSchedule,
   getFlightStateAtElapsed,
 } from '../utils/prayerMath';
+import AirportSearch from './AirportSearch';
 
 // ─── Plain Dot Icons (No Letters) ────────────────────────────────────────────
 
@@ -343,36 +344,26 @@ export default function FlightTracker() {
       {/* Input Form */}
       <div className="max-w-7xl mx-auto p-4">
         <div className="bg-white/70 backdrop-blur-xl border border-[#e0d5c8] shadow-[0_8px_32px_0_rgba(0,0,0,0.06)] rounded-3xl p-4 mb-4 transition-all duration-500 hover:border-[#d0c0b0]">
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <div>
-              <label className="block text-sm text-[#8a7a6a] mb-1">Departure Airport</label>
-              <select
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+            <div className="sm:col-span-1 lg:col-span-1">
+              <AirportSearch
+                airports={airports}
                 value={depCode}
-                onChange={(e) => setDepCode(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] focus:outline-none focus:border-[#c4a882]"
-              >
-                <option value="">Select...</option>
-                {airports.map((a) => (
-                  <option key={a.code} value={a.code}>
-                    {a.code} — {a.city}, {a.country}
-                  </option>
-                ))}
-              </select>
+                onChange={setDepCode}
+                label="Departure Airport"
+                placeholder="e.g. JFK, DOH, LHR..."
+                disabled={!!flightState}
+              />
             </div>
-            <div>
-              <label className="block text-sm text-[#8a7a6a] mb-1">Arrival Airport</label>
-              <select
+            <div className="sm:col-span-1 lg:col-span-1">
+              <AirportSearch
+                airports={airports}
                 value={arrCode}
-                onChange={(e) => setArrCode(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] focus:outline-none focus:border-[#c4a882]"
-              >
-                <option value="">Select...</option>
-                {airports.map((a) => (
-                  <option key={a.code} value={a.code}>
-                    {a.code} — {a.city}, {a.country}
-                  </option>
-                ))}
-              </select>
+                onChange={setArrCode}
+                label="Arrival Airport"
+                placeholder="e.g. IAH, DXB, CDG..."
+                disabled={!!flightState}
+              />
             </div>
             <div>
               <label className="block text-sm text-[#8a7a6a] mb-1">Date</label>
@@ -380,7 +371,8 @@ export default function FlightTracker() {
                 type="date"
                 value={depDate}
                 onChange={(e) => setDepDate(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] focus:outline-none focus:border-[#c4a882]"
+                disabled={!!flightState}
+                className="w-full px-3 py-2.5 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] focus:outline-none focus:border-[#c4a882] disabled:bg-[#f5f0eb] disabled:text-[#a09080]"
               />
             </div>
             <div>
@@ -389,7 +381,8 @@ export default function FlightTracker() {
                 type="time"
                 value={depTime}
                 onChange={(e) => setDepTime(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] focus:outline-none focus:border-[#c4a882]"
+                disabled={!!flightState}
+                className="w-full px-3 py-2.5 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] focus:outline-none focus:border-[#c4a882] disabled:bg-[#f5f0eb] disabled:text-[#a09080]"
               />
             </div>
             <div>
@@ -401,20 +394,22 @@ export default function FlightTracker() {
                   max="24"
                   value={durationH}
                   onChange={(e) => setDurationH(e.target.value)}
+                  disabled={!!flightState}
                   placeholder="h"
-                  className="w-full px-2 py-2 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] text-center focus:outline-none focus:border-[#c4a882]"
+                  className="w-full px-2 py-2.5 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] text-center focus:outline-none focus:border-[#c4a882] disabled:bg-[#f5f0eb] disabled:text-[#a09080]"
                 />
-                <span className="flex items-center text-[#a09080]">h</span>
+                <span className="flex items-center text-[#a09080] text-sm">h</span>
                 <input
                   type="number"
                   min="0"
                   max="59"
                   value={durationM}
                   onChange={(e) => setDurationM(e.target.value)}
+                  disabled={!!flightState}
                   placeholder="m"
-                  className="w-full px-2 py-2 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] text-center focus:outline-none focus:border-[#c4a882]"
+                  className="w-full px-2 py-2.5 bg-white border border-[#e0d5c8] rounded-lg text-[#3d352e] text-center focus:outline-none focus:border-[#c4a882] disabled:bg-[#f5f0eb] disabled:text-[#a09080]"
                 />
-                <span className="flex items-center text-[#a09080]">m</span>
+                <span className="flex items-center text-[#a09080] text-sm">m</span>
               </div>
             </div>
             <div className="flex flex-col justify-end">
@@ -423,6 +418,7 @@ export default function FlightTracker() {
                   type="checkbox"
                   checked={nextDay}
                   onChange={(e) => setNextDay(e.target.checked)}
+                  disabled={!!flightState}
                   className="w-4 h-4 accent-[#c4a882]"
                 />
                 Arrive next day
@@ -430,14 +426,14 @@ export default function FlightTracker() {
               {!flightState ? (
                 <button
                   onClick={handleShowOverview}
-                  className="w-full px-4 py-2 bg-[#c4a882] hover:bg-[#b89978] text-white font-bold rounded-lg transition-colors"
+                  className="w-full px-4 py-2.5 bg-[#c4a882] hover:bg-[#b89978] text-white font-bold rounded-lg transition-colors"
                 >
                   Go
                 </button>
               ) : (
                 <button
                   onClick={() => { setFlightState(null); setPrayerMarkers([]); setError(''); }}
-                  className="w-full px-4 py-2 bg-[#d0b0a0] hover:bg-[#c0a090] text-white font-bold rounded-lg transition-colors"
+                  className="w-full px-4 py-2.5 bg-[#d0b0a0] hover:bg-[#c0a090] text-white font-bold rounded-lg transition-colors"
                 >
                   Back
                 </button>
@@ -575,11 +571,17 @@ export default function FlightTracker() {
 
         {!flightState && !error && (
           <div className="text-center py-16">
-            <div className="text-5xl mb-4 text-[#c4a882] font-serif">M</div>
+            <div className="flex justify-center mb-4">
+              <svg width="48" height="48" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="20" cy="20" r="20" fill="#c4a882" opacity="0.3"/>
+                <circle cx="25" cy="15" r="13" fill="#f5f0eb" opacity="0.85"/>
+                <path d="M20 9 L21.25 13.5 L26 13.5 L22.25 16.5 L23.5 21 L20 18.5 L16.5 21 L17.75 16.5 L14 13.5 L18.75 13.5 Z" fill="#c4a882" opacity="0.6"/>
+              </svg>
+            </div>
             <h2 className="text-xl font-bold text-[#3d352e] mb-2">Plan Your Flight</h2>
-            <p className="text-[#8a7a6a]">
-              Select departure and arrival airports, set your time and duration,
-              <br />
+            <p className="text-[#8a7a6a] text-sm px-4">
+              Type an airport code or city name, set your time and duration,
+              <br className="hidden sm:block" />
               then see prayer times for your journey.
             </p>
           </div>

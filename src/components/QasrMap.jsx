@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Polygon, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import { Geolocation } from '@capacitor/geolocation';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
   calculateQasrStatus,
   getSupportedCities,
@@ -70,38 +73,63 @@ function MapController({ center, zoom }) {
   return null;
 }
 
-// ─── Audio Alert ─────────────────────────────────────────────────────────────
+// ─── Haptic Alert (Mobile) / Audio Fallback (Web) ──────────────────────────
 
-function playAlertSound() {
+async function playAlertSound() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-    oscillator.connect(gainNode);
-    gainNode.connect(ctx.destination);
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(880, ctx.currentTime);
-    oscillator.frequency.setValueAtTime(660, ctx.currentTime + 0.15);
-    oscillator.frequency.setValueAtTime(440, ctx.currentTime + 0.3);
-    gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
-    oscillator.start(ctx.currentTime);
-    oscillator.stop(ctx.currentTime + 0.6);
-  } catch (e) {
-    // Audio not available
+    await Haptics.impact({ style: ImpactStyle.Heavy });
+  } catch {
+    // Fallback: Web AudioContext
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+      oscillator.frequency.setValueAtTime(660, ctx.currentTime + 0.15);
+      oscillator.frequency.setValueAtTime(440, ctx.currentTime + 0.3);
+      gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+      oscillator.start(ctx.currentTime);
+      oscillator.stop(ctx.currentTime + 0.6);
+    } catch {
+      // No audio/haptics available
+    }
   }
 }
 
-// ─── Send Browser Notification ───────────────────────────────────────────────
+// ─── Send Android / iOS Notification ────────────────────────────────────────
 
 async function sendNotification(title, body) {
-  if (!('Notification' in window)) return;
-  if (Notification.permission === 'granted') {
-    new Notification(title, { body, icon: '/favicon.svg' });
-  } else if (Notification.permission !== 'denied') {
-    const permission = await Notification.requestPermission();
-    if (permission === 'granted') {
-      new Notification(title, { body, icon: '/favicon.svg' });
+  try {
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          title,
+          body,
+          id: Date.now(),
+          schedule: { at: new Date(Date.now() + 100) },
+          smallIcon: 'ic_stat_icon_config_sample',
+          iconColor: '#c4a882',
+        },
+      ],
+    });
+  } catch {
+    // Fallback: Browser Notification API
+    if (!('Notification' in window)) return;
+    try {
+      if (Notification.permission === 'granted') {
+        new Notification(title, { body, icon: '/favicon.svg' });
+      } else if (Notification.permission !== 'denied') {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          new Notification(title, { body, icon: '/favicon.svg' });
+        }
+      }
+    } catch {
+      // Browser notification not available
     }
   }
 }
@@ -365,7 +393,7 @@ export default function QasrMap() {
   useEffect(() => {
     return () => {
       if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
+        Geolocation.clearWatch({ id: watchIdRef.current });
       }
     };
   }, []);
@@ -401,7 +429,7 @@ export default function QasrMap() {
     }
   }, [cityName, haddAlerted]);
 
-  const startMonitoring = useCallback(() => {
+  const startMonitoring = useCallback(async () => {
     if (!cityName) {
       setError('Please select a city or use your current location first.');
       return;
@@ -413,121 +441,155 @@ export default function QasrMap() {
     setDistanceToHadd(null);
     prevStatusRef.current = null;
 
-    // Request notification permission
+    // Request notification permission (Capacitor handles this natively, but we keep browser fallback)
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
 
-    // Start watching position
-    if (navigator.geolocation) {
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        (pos) => {
-          handlePositionUpdate(pos.coords.latitude, pos.coords.longitude);
-        },
-        (err) => {
-          console.warn('Watch position error:', err.message);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+    // Start watching position via Capacitor Geolocation
+    try {
+      watchIdRef.current = await Geolocation.watchPosition(
+        { enableHighAccuracy: true, timeout: 10000 },
+        (position, err) => {
+          if (err) {
+            console.warn('Watch position error:', err);
+            return;
+          }
+          if (position) {
+            handlePositionUpdate(position.coords.latitude, position.coords.longitude);
+          }
+        }
       );
+    } catch (watchError) {
+      console.warn('Geolocation watch failed (fallback to browser API):', watchError);
+      // Fallback: browser geolocation
+      if (navigator.geolocation) {
+        watchIdRef.current = navigator.geolocation.watchPosition(
+          (pos) => {
+            handlePositionUpdate(pos.coords.latitude, pos.coords.longitude);
+          },
+          (err) => {
+            console.warn('Watch position error:', err.message);
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+        );
+      }
     }
   }, [cityName, handlePositionUpdate]);
 
   const stopMonitoring = useCallback(() => {
     setIsMonitoring(false);
     if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
+      try {
+        Geolocation.clearWatch({ id: watchIdRef.current });
+      } catch {
+        // Fallback: browser
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
       watchIdRef.current = null;
     }
   }, []);
 
-  // Get user's current location
-  const getCurrentLocation = useCallback(() => {
-    setIsLoading(true);
-    setError('');
+  // ─── Get user's current location via Capacitor ───────────────────────────
 
-    if (!navigator.geolocation) {
-      setError('Geolocation is not supported by your browser.');
-      setIsLoading(false);
+  async function processLocation(latitude, longitude) {
+    setLocation({ lat: latitude, lng: longitude });
+    setIsLoading(false);
+
+    // Step 1: Check if location falls inside any known city boundary
+    const matchedCity = findCityForLocation(latitude, longitude);
+    if (matchedCity) {
+      setCityName(matchedCity);
+      const status = calculateQasrStatus(latitude, longitude, matchedCity);
+      setQasrStatus(status);
+      setError('');
+      setDetectedCityName(`Snapped to ${matchedCity}`);
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        setLocation({ lat: latitude, lng: longitude });
+    // Step 2: Reverse geocode to get city name
+    try {
+      const geoResult = await reverseGeocode(latitude, longitude);
+      const reverseCity = geoResult.city;
+
+      if (!reverseCity) {
+        setError('Could not determine your city. Please select one from the dropdown.');
+        return;
+      }
+
+      // Step 3: Check the reverse-geocoded city in our database
+      const cityData = getUrfBoundary(reverseCity);
+      if (cityData) {
+        setCityName(reverseCity);
+        const status = calculateQasrStatus(latitude, longitude, reverseCity);
+        setQasrStatus(status);
+        setError('');
+        setDetectedCityName(`Located: ${reverseCity}, ${geoResult.state || ''}`);
+        return;
+      }
+
+      // Step 4: Fetch the city boundary from Nominatim
+      setDetectedCityName(`Discovering: ${reverseCity}...`);
+      const boundaryData = await fetchCityBoundary(reverseCity, geoResult.state || '');
+
+      if (boundaryData && boundaryData.boundary) {
+        const newCityData = {
+          center: boundaryData.center,
+          boundary: boundaryData.boundary,
+        };
+        saveUserCity(reverseCity, newCityData);
+
+        setCityName(reverseCity);
+        const status = calculateQasrStatus(latitude, longitude, reverseCity);
+        setQasrStatus(status);
+        setError('');
+        setDetectedCityName(`New city discovered: ${reverseCity}`);
+      } else {
+        setCityName('');
+        setQasrStatus({
+          isInsideUrf: null,
+          distanceFromBoundary: null,
+          isOutsideHadd: true,
+          status: 'unknown',
+          message: `No boundary data available for "${reverseCity}". Based on your distance from known cities, you are likely a Traveler (Musafir). Please consult a qualified Islamic authority.`,
+          cityName: reverseCity,
+          cityCenter: geoResult ? [geoResult.lat, geoResult.lng] : [latitude, longitude],
+        });
+        setDetectedCityName(`Unknown city: ${reverseCity}`);
+      }
+    } catch (e) {
+      setError(`Could not determine location: ${e.message}. Please select a city from the dropdown.`);
+    }
+  }
+
+  const getCurrentLocation = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const position = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 15000,
+      });
+      await processLocation(position.coords.latitude, position.coords.longitude);
+    } catch (geoError) {
+      // Fallback: try browser geolocation
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            await processLocation(pos.coords.latitude, pos.coords.longitude);
+          },
+          (err) => {
+            setError(`Could not get location: ${err.message}. Please select a city from the dropdown.`);
+            setIsLoading(false);
+          },
+          { enableHighAccuracy: true, timeout: 15000 }
+        );
+      } else {
+        setError(`Could not get location: ${geoError.message}. Please select a city from the dropdown.`);
         setIsLoading(false);
-
-        // Step 1: Check if location falls inside any known city boundary
-        const matchedCity = findCityForLocation(latitude, longitude);
-        if (matchedCity) {
-          setCityName(matchedCity);
-          const status = calculateQasrStatus(latitude, longitude, matchedCity);
-          setQasrStatus(status);
-          setError('');
-          setDetectedCityName(`Snapped to ${matchedCity}`);
-          return;
-        }
-
-        // Step 2: Reverse geocode to get city name
-        try {
-          const geoResult = await reverseGeocode(latitude, longitude);
-          const reverseCity = geoResult.city;
-
-          if (!reverseCity) {
-            setError('Could not determine your city. Please select one from the dropdown.');
-            return;
-          }
-
-          // Step 3: Check the reverse-geocoded city in our database
-          const cityData = getUrfBoundary(reverseCity);
-          if (cityData) {
-            setCityName(reverseCity);
-            const status = calculateQasrStatus(latitude, longitude, reverseCity);
-            setQasrStatus(status);
-            setError('');
-            setDetectedCityName(`Located: ${reverseCity}, ${geoResult.state || ''}`);
-            return;
-          }
-
-          // Step 4: Fetch the city boundary from Nominatim
-          setDetectedCityName(`Discovering: ${reverseCity}...`);
-          const boundaryData = await fetchCityBoundary(reverseCity, geoResult.state || '');
-
-          if (boundaryData && boundaryData.boundary) {
-            const newCityData = {
-              center: boundaryData.center,
-              boundary: boundaryData.boundary,
-            };
-            saveUserCity(reverseCity, newCityData);
-
-            setCityName(reverseCity);
-            const status = calculateQasrStatus(latitude, longitude, reverseCity);
-            setQasrStatus(status);
-            setError('');
-            setDetectedCityName(`New city discovered: ${reverseCity}`);
-          } else {
-            setCityName('');
-            setQasrStatus({
-              isInsideUrf: null,
-              distanceFromBoundary: null,
-              isOutsideHadd: true,
-              status: 'unknown',
-              message: `No boundary data available for "${reverseCity}". Based on your distance from known cities, you are likely a Traveler (Musafir). Please consult a qualified Islamic authority.`,
-              cityName: reverseCity,
-              cityCenter: geoResult ? [geoResult.lat, geoResult.lng] : [latitude, longitude],
-            });
-            setDetectedCityName(`Unknown city: ${reverseCity}`);
-          }
-        } catch (e) {
-          setError(`Could not determine location: ${e.message}. Please select a city from the dropdown.`);
-        }
-      },
-      (err) => {
-        setError(`Could not get location: ${err.message}. Please select a city from the dropdown.`);
-        setIsLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 15000 }
-    );
+      }
+    }
   }, []);
 
   // Handle manual city selection
@@ -901,11 +963,17 @@ export default function QasrMap() {
         {/* Empty state */}
         {!qasrStatus && !error && (
           <div className="text-center py-16">
-            <div className="text-5xl mb-4 text-[#c4a882] font-serif">M</div>
+            <div className="flex justify-center mb-4">
+              <svg width="48" height="48" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="20" cy="20" r="20" fill="#c4a882" opacity="0.3"/>
+                <circle cx="25" cy="15" r="13" fill="#f5f0eb" opacity="0.85"/>
+                <path d="M20 9 L21.25 13.5 L26 13.5 L22.25 16.5 L23.5 21 L20 18.5 L16.5 21 L17.75 16.5 L14 13.5 L18.75 13.5 Z" fill="#c4a882" opacity="0.6"/>
+              </svg>
+            </div>
             <h2 className="text-xl font-bold text-[#3d352e] mb-2">Check Your Traveler Status</h2>
-            <p className="text-[#8a7a6a]">
+            <p className="text-[#8a7a6a] text-sm px-4">
               Use your current location or select a city to see the 'Urf boundary
-              <br />
+              <br className="hidden sm:block" />
               and determine if you are a Traveler (Qasr) or Resident (Tamam).
             </p>
           </div>
