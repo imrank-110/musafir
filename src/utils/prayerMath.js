@@ -335,3 +335,90 @@ export function generateFlightPrayerSchedule(lat, lng, altitudeMeters, date, ela
     progress: durationMinutes > 0 ? elapsedMinutes / durationMinutes : 0,
   };
 }
+
+/**
+ * Get combined prayer slots for travel (Shia practice).
+ * Returns Fajr, Dhuhr/Asr (combined), and Maghrib/Isha (combined).
+ * 
+ * @param {Object} prayerTimes - Raw prayer times from calculatePrayerTimes()
+ * @returns {Array} Combined prayer slots with start/end times and labels
+ */
+export function getCombinedPrayerSlots(prayerTimes) {
+  if (!prayerTimes) return [];
+
+  return [
+    {
+      key: 'fajr',
+      label: 'Fajr',
+      short: 'F',
+      startTime: prayerTimes.fajr,
+      endTime: prayerTimes.sunrise,
+      color: '#3b82f6', // blue
+    },
+    {
+      key: 'dhuhrAsr',
+      label: 'Dhuhr/Asr',
+      short: 'D/A',
+      startTime: prayerTimes.dhuhr,
+      endTime: prayerTimes.maghrib,
+      color: '#f59e0b', // amber
+    },
+    {
+      key: 'maghribIsha',
+      label: 'Maghrib/Isha',
+      short: 'M/I',
+      startTime: prayerTimes.maghrib,
+      endTime: prayerTimes.midnight,
+      color: '#ef4444', // red
+    },
+  ];
+}
+
+/**
+ * Determine which combined prayer slots fall within a flight window.
+ * 
+ * @param {Array} slots - Combined prayer slots from getCombinedPrayerSlots()
+ * @param {number} takeoffHours - Takeoff time in decimal hours (local)
+ * @param {number} landingHours - Landing time in decimal hours (local)
+ * @returns {Array} Slots annotated with flight status
+ */
+export function getPrayersDuringFlight(slots, takeoffHours, landingHours) {
+  return slots.map(slot => {
+    const startInFlight = slot.startTime >= takeoffHours && slot.startTime <= landingHours;
+    const endInFlight = slot.endTime >= takeoffHours && slot.endTime <= landingHours;
+    const overlaps = slot.startTime < landingHours && slot.endTime > takeoffHours;
+
+    let status;
+    let effectiveStart = slot.startTime;
+    let effectiveEnd = slot.endTime;
+
+    if (!overlaps) {
+      status = 'not-during-flight';
+    } else {
+      status = 'during-flight';
+      if (slot.startTime < takeoffHours) {
+        effectiveStart = takeoffHours;
+        status = 'partially-during-flight';
+      }
+      if (slot.endTime > landingHours) {
+        effectiveEnd = landingHours;
+        status = 'partially-during-flight';
+      }
+    }
+
+    // Calculate elapsed flight time when this prayer occurs
+    const elapsedAtStart = Math.max(0, (effectiveStart - takeoffHours) * 60);
+    const elapsedAtEnd = Math.max(0, (effectiveEnd - takeoffHours) * 60);
+    const windowMinutes = Math.max(0, effectiveEnd - effectiveStart) * 60;
+
+    return {
+      ...slot,
+      status,
+      effectiveStart,
+      effectiveEnd,
+      elapsedAtStart,
+      elapsedAtEnd,
+      windowMinutes,
+    };
+  });
+}
