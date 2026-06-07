@@ -491,7 +491,18 @@ export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, duration
     if (startEntry && endEntry) {
       const elapsedAtStart = startEntry.elapsedMin;
       const elapsedAtEnd = endEntry.elapsedMin + scanInterval; // +scanInterval because the last entry is still inside
-      const windowMinutes = elapsedAtEnd - elapsedAtStart;
+
+      // Use LOCAL prayer time duration — not flight elapsed minutes — for the window
+      const pt = startEntry.prayerTimes;
+      let windowMinutes = 0;
+      if (p.key === 'fajr') {
+        windowMinutes = ((pt.sunrise - pt.fajr) * 60);
+      } else if (p.key === 'dhuhrAsr') {
+        windowMinutes = ((pt.maghrib - pt.dhuhr) * 60);
+      } else if (p.key === 'maghribIsha') {
+        windowMinutes = ((pt.midnight - pt.maghrib) * 60);
+      }
+      windowMinutes = Math.max(0, windowMinutes);
 
       // Position at start of prayer
       const startIdx = Math.min(Math.floor((elapsedAtStart / durationMinutes) * (pathPoints.length - 1)), pathPoints.length - 1);
