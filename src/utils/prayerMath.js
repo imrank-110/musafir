@@ -423,10 +423,6 @@ export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, duration
 
   const schedule = [];
   const prayerMarkers = [];
-  const combinedPrayerSlots = [];
-
-  // Track active prayer for combining slots
-  let currentSlot = null;
 
   // Scan the flight path
   const numScans = Math.ceil(durationMinutes / scanInterval);
@@ -486,46 +482,33 @@ export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, duration
 
   // Walk through the daily cycle in fixed order to build prayer markers.
   // The cycle is always: Fajr → Sunrise → Dhuhr/Asr → Maghrib/Isha → (back to Fajr)
-  // We start from whichever slot is active at the departure time, then walk forward
-  // through the cycle finding when each subsequent slot first becomes active.
+  // Each slot search starts from where the previous slot was found, so we never
+  // find a slot that occurs earlier in the flight than the previous one.
 
-  // Determine what's active at departure (first schedule entry)
+  const cycleSlots = ['fajr', 'sunrise', 'dhuhrAsr', 'maghribIsha'];
+
+  // Determine start index based on what's active at departure
   const depEntry = schedule[0];
-  let cycleSlots = ['fajr', 'sunrise', 'dhuhrAsr', 'maghribIsha'];
-
-  // Find index to start from: the slot active at departure, or the next slot after it
   let startIdx = 0;
   let depSlotKey = null;
   if (depEntry && depEntry.activeSlot) {
     depSlotKey = depEntry.activeSlot.key;
   }
 
-  // Map combined slot keys to cycle slot names
-  const slotToCycle = {
-    'fajr': 'fajr',
-    'dhuhrAsr': 'dhuhrAsr',
-    'maghribIsha': 'maghribIsha',
-  };
+  const slotToCycle = { 'fajr': 'fajr', 'dhuhrAsr': 'dhuhrAsr', 'maghribIsha': 'maghribIsha' };
 
   if (depSlotKey && slotToCycle[depSlotKey]) {
     startIdx = cycleSlots.indexOf(slotToCycle[depSlotKey]);
-  } else {
-    // If no slot is active at departure, check if it's between Fajr and sunrise
-    // (i.e., after Fajr ends but before Sunrise). In that case start with Sunrise.
-    if (depEntry) {
-      const pt = depEntry.prayerTimes;
-      const locH = depEntry.localHours;
-      // Is it between Sunrise and Dhuhr? Then nothing is active, start from Dhuhr/Asr
-      if (locH >= pt.sunrise && locH < pt.dhuhr) {
-        startIdx = 2; // skip to dhuhrAsr
-      } else if (locH >= pt.midnight && locH < pt.fajr) {
-        startIdx = 0; // wait for Fajr
-      }
+  } else if (depEntry) {
+    const pt = depEntry.prayerTimes;
+    const locH = depEntry.localHours;
+    if (locH >= pt.sunrise && locH < pt.dhuhr) {
+      startIdx = 2; // skip to dhuhrAsr
+    } else if (locH >= pt.midnight && locH < pt.fajr) {
+      startIdx = 0; // wait for Fajr
     }
   }
 
-  // Define the display order: for each cycle slot, we record its label, color,
-  // and which prayerTimes field to use for the local time display.
   const displayMap = {
     'fajr':     { label: 'Fajr',        color: '#3b82f6', timeKey: 'fajr' },
     'sunrise':  { label: 'Sunrise',     color: '#f97316', timeKey: 'sunrise' },
@@ -533,7 +516,10 @@ export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, duration
     'maghribIsha': { label: 'Maghrib/Isha', color: '#ef4444', timeKey: 'maghrib' },
   };
 
-  // Walk forward from startIdx through the cycle, wrapping around
+  // Walk forward through the cycle, starting each search from the previous
+  // found position + 1 so we don't find earlier-occurring slots
+  let searchStartIdx = 0;
+
   for (let c = 0; c < cycleSlots.length; c++) {
     const cycleIdx = (startIdx + c) % cycleSlots.length;
     const slotName = cycleSlots[cycleIdx];
@@ -541,18 +527,18 @@ export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, duration
 
     let foundEntry = null;
 
-    for (const entry of schedule) {
+    for (let e = searchStartIdx; e < schedule.length; e++) {
+      const entry = schedule[e];
       if (slotName === 'sunrise') {
-        // Sunrise: first entry where localTime is >= sunrise AND localTime < dhuhr
-        // (must be after actual sunrise, not just local hours >= sunrise)
         if (entry.localHours >= entry.prayerTimes.sunrise && entry.localHours < entry.prayerTimes.dhuhr) {
           foundEntry = entry;
+          searchStartIdx = e + 1;
           break;
         }
       } else {
-        // Combined slot: first entry where activeSlot matches
         if (entry.activeSlot && entry.activeSlot.key === slotName) {
           foundEntry = entry;
+          searchStartIdx = e + 1;
           break;
         }
       }
