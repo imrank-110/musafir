@@ -11,27 +11,229 @@
 body {
   margin: 0;
   padding: 0;
-  background-color: #111827;
+  background-color: #0f172a;
   color: #f3f4f6;
+  overflow-x: hidden;
 }
 
-/* Leaflet overrides for dark theme */
+/* ─── Liquid Glass Background Animations ─────────────────────────────────── */
+
+@keyframes blob {
+  0% {
+    transform: translate(0px, 0px) scale(1) rotate(0deg);
+    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+  }
+  25% {
+    transform: translate(30px, -50px) scale(1.1) rotate(90deg);
+    border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%;
+  }
+  50% {
+    transform: translate(-20px, 20px) scale(0.9) rotate(180deg);
+    border-radius: 50% 60% 30% 70% / 40% 50% 60% 50%;
+  }
+  75% {
+    transform: translate(40px, 30px) scale(1.05) rotate(270deg);
+    border-radius: 70% 30% 50% 50% / 30% 70% 50% 60%;
+  }
+  100% {
+    transform: translate(0px, 0px) scale(1) rotate(360deg);
+    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes glass-shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+@keyframes neon-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 20px rgba(16, 185, 129, 0.8));
+  }
+}
+
+@keyframes neon-pulse-amber {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 20px rgba(245, 158, 11, 0.8));
+  }
+}
+
+@keyframes progress-glow {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(59, 130, 246, 0.6);
+  }
+}
+
+.animate-blob {
+  animation: blob 20s infinite ease-in-out;
+}
+
+.animate-blob-delayed {
+  animation: blob 25s infinite ease-in-out reverse;
+}
+
+.animate-blob-slow {
+  animation: blob 30s infinite ease-in-out;
+  animation-delay: -5s;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-glass-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.06) 50%,
+    rgba(255, 255, 255, 0.03) 75%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: glass-shimmer 4s ease-in-out infinite;
+}
+
+.animate-neon-pulse {
+  animation: neon-pulse 2s ease-in-out infinite;
+}
+
+.animate-neon-pulse-amber {
+  animation: neon-pulse-amber 2s ease-in-out infinite;
+}
+
+.animate-progress-glow {
+  animation: progress-glow 2s ease-in-out infinite;
+}
+
+/* ─── Glass Card Utility ─────────────────────────────────────────────────── */
+
+.glass-card {
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  border-radius: 1.5rem;
+  transition: all 0.5s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.glass-card-strong {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  border-radius: 1.5rem;
+}
+
+/* ─── Boarding Pass Ticket ───────────────────────────────────────────────── */
+
+.boarding-pass {
+  background: linear-gradient(
+    135deg,
+    rgba(15, 23, 42, 0.6) 0%,
+    rgba(30, 41, 59, 0.5) 50%,
+    rgba(15, 23, 42, 0.6) 100%
+  );
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border-radius: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.boarding-pass::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(16, 185, 129, 0.03) 60deg,
+    transparent 120deg,
+    rgba(59, 130, 246, 0.03) 180deg,
+    transparent 240deg,
+    rgba(16, 185, 129, 0.03) 300deg,
+    transparent 360deg
+  );
+  animation: glass-shimmer 8s linear infinite;
+  pointer-events: none;
+}
+
+/* ─── Neon Timeline ──────────────────────────────────────────────────────── */
+
+.neon-timeline-line {
+  position: relative;
+}
+
+.neon-timeline-line::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(
+    to bottom,
+    rgba(16, 185, 129, 0.6) 0%,
+    rgba(59, 130, 246, 0.6) 50%,
+    rgba(16, 185, 129, 0.6) 100%
+  );
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+}
+
+/* ─── Leaflet overrides for dark theme ───────────────────────────────────── */
+
 .leaflet-container {
-  background: #1f2937 !important;
+  background: #0f172a !important;
   font-family: inherit;
 }
 
 .leaflet-popup-content-wrapper {
-  background: #1f2937 !important;
+  background: rgba(15, 23, 42, 0.9) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
   color: #f3f4f6 !important;
-  border: 1px solid #374151 !important;
-  border-radius: 12px !important;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
 }
 
 .leaflet-popup-tip {
-  background: #1f2937 !important;
-  border: 1px solid #374151 !important;
+  background: rgba(15, 23, 42, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
 
 .leaflet-popup-close-button {
@@ -44,17 +246,19 @@ body {
 }
 
 .leaflet-control-zoom a {
-  background: #1f2937 !important;
+  background: rgba(15, 23, 42, 0.8) !important;
+  backdrop-filter: blur(8px) !important;
   color: #f3f4f6 !important;
-  border: 1px solid #374151 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
 
 .leaflet-control-zoom a:hover {
-  background: #374151 !important;
+  background: rgba(30, 41, 59, 0.9) !important;
 }
 
 .leaflet-control-attribution {
-  background: rgba(17, 24, 39, 0.8) !important;
+  background: rgba(15, 23, 42, 0.6) !important;
+  backdrop-filter: blur(8px) !important;
   color: #6b7280 !important;
   font-size: 10px !important;
 }
@@ -63,25 +267,27 @@ body {
   color: #10b981 !important;
 }
 
-/* Custom scrollbar */
+/* ─── Custom scrollbar ───────────────────────────────────────────────────── */
+
 ::-webkit-scrollbar {
   width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1f2937;
+  background: #0f172a;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4b5563;
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+  background: rgba(255, 255, 255, 0.2);
 }
 
-/* Animations */
+/* ─── Legacy animations ──────────────────────────────────────────────────── */
+
 @keyframes pulse-glow {
   0%, 100% {
     box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);

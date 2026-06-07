@@ -156,21 +156,21 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
 
   if (verdict) {
     return (
-      <div className="bg-gray-800/80 backdrop-blur rounded-xl p-6 border border-gray-700">
-        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+      <div className="boarding-pass p-6">
+        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">
           <span>⚖️</span> Your Ruling (Hukm)
         </h3>
 
-        <div className={`p-4 rounded-xl mb-4 ${
+        <div className={`boarding-pass p-4 mb-4 ${
           verdict.finalStatus === 'traveler'
-            ? 'bg-emerald-900/30 border border-emerald-600/50'
-            : 'bg-blue-900/30 border border-blue-600/50'
+            ? 'border-emerald-500/30'
+            : 'border-blue-500/30'
         }`}>
           <div className="text-center">
             <div className="text-4xl mb-2">
               {verdict.finalStatus === 'traveler' ? '🛤️' : '🏠'}
             </div>
-            <div className={`text-2xl font-bold mb-2 ${
+            <div className={`text-2xl font-bold mb-2 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)] ${
               verdict.finalStatus === 'traveler' ? 'text-emerald-300' : 'text-blue-300'
             }`}>
               {verdict.finalStatus === 'traveler' ? 'Traveler (Musafir)' : 'Resident (Hadir)'}
@@ -178,15 +178,15 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
           </div>
 
           <div className="space-y-3 mt-4">
-            <div className="flex items-center justify-between p-3 bg-gray-900/50 rounded-lg">
+            <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-xl border border-white/5">
               <span className="text-gray-300">🕌 Prayers</span>
-              <span className={`font-bold ${verdict.prayers.includes('Qasr') ? 'text-emerald-300' : 'text-blue-300'}`}>
+              <span className={`font-bold ${verdict.prayers.includes('Qasr') ? 'text-emerald-300 animate-neon-pulse' : 'text-blue-300'}`}>
                 {verdict.prayers}
               </span>
             </div>
-            <div className="flex items-center justify-between p-3 bg-gray-900/50 rounded-lg">
+            <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-xl border border-white/5">
               <span className="text-gray-300">🌙 Fasting</span>
-              <span className={`font-bold ${verdict.fasting.includes('Invalid') ? 'text-red-300' : 'text-emerald-300'}`}>
+              <span className={`font-bold ${verdict.fasting.includes('Invalid') ? 'text-red-300' : 'text-emerald-300 animate-neon-pulse'}`}>
                 {verdict.fasting}
               </span>
             </div>
@@ -211,7 +211,7 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
             setPassingThroughWatan(null);
             onReset && onReset();
           }}
-          className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+          className="w-full px-4 py-2 bg-slate-700/50 hover:bg-slate-600/50 text-white rounded-xl border border-white/5 transition-all duration-300"
         >
           🔄 Start Over
         </button>
@@ -220,7 +220,7 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
   }
 
   return (
-    <div className="bg-gray-800/80 backdrop-blur rounded-xl p-4 border border-gray-700">
+    <div className="glass-card p-4">
       <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
         <span>⚖️</span> Step {step} of 3
       </h3>
@@ -608,7 +608,7 @@ export default function QasrMap() {
   const haddBoundary = cityName ? generateHaddBoundary(cityName) : null;
 
   return (
-    <div className="min-h-screen bg-gray-900">
+    <div className="min-h-screen">
       {/* Hadd Crossing Alert Banner */}
       {haddAlerted && (
         <div className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 p-4 shadow-lg animate-pulse">
@@ -616,7 +616,7 @@ export default function QasrMap() {
             <div className="flex items-center gap-3">
               <span className="text-3xl">🚀</span>
               <div>
-                <h2 className="text-lg font-bold text-white">Hadd al-Tarakhkhus Crossed!</h2>
+                <h2 className="text-lg font-bold text-white drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]">Hadd al-Tarakhkhus Crossed!</h2>
                 <p className="text-sm text-emerald-100">
                   You are now a Traveler (Musafir). Prayers: Qasr (2 Rak'ahs). Fasting: Invalid (Qada required).
                 </p>
@@ -633,9 +633,9 @@ export default function QasrMap() {
       )}
 
       {/* Header */}
-      <div className="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-gray-700 p-4">
+      <div className="bg-slate-900/40 backdrop-blur-xl border-b border-white/5 p-4">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">
             <span>🗺️</span> Qasr Status Checker
           </h1>
           <p className="text-gray-400 text-sm mt-1">
@@ -647,7 +647,7 @@ export default function QasrMap() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto p-4">
         {/* Input Controls */}
-        <div className="bg-gray-800/80 backdrop-blur rounded-xl p-4 border border-gray-700 mb-4">
+        <div className="glass-card p-4 mb-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-gray-400 mb-1">Your Location</label>
@@ -839,12 +839,12 @@ export default function QasrMap() {
           <div className="space-y-4">
             {/* Status Card */}
             {qasrStatus && (
-              <div className={`rounded-xl p-4 border ${
+              <div className={`glass-card p-4 ${
                 qasrStatus.status === 'traveler'
-                  ? 'bg-emerald-900/30 border-emerald-600/50'
+                  ? 'border-emerald-500/30'
                   : qasrStatus.status === 'resident'
-                  ? 'bg-green-900/30 border-green-600/50'
-                  : 'bg-yellow-900/30 border-yellow-600/50'
+                  ? 'border-green-500/30'
+                  : 'border-yellow-500/30'
               }`}>
                 <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
                   <span>📍</span> Location Status
@@ -853,7 +853,7 @@ export default function QasrMap() {
                   <div className="text-3xl mb-1">
                     {qasrStatus.status === 'traveler' ? '🛤️' : qasrStatus.status === 'resident' ? '🏠' : '🚶'}
                   </div>
-                  <div className={`text-xl font-bold ${
+                  <div className={`text-xl font-bold drop-shadow-[0_0_8px_rgba(16,185,129,0.3)] ${
                     qasrStatus.status === 'traveler' ? 'text-emerald-300' :
                     qasrStatus.status === 'resident' ? 'text-green-300' : 'text-yellow-300'
                   }`}>
@@ -880,7 +880,7 @@ export default function QasrMap() {
             )}
 
             {/* Driving Monitor Controls */}
-            <div className="bg-gray-800/80 backdrop-blur rounded-xl p-4 border border-gray-700">
+            <div className="glass-card p-4">
               <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                 <span>🚗</span> Driving Monitor
               </h3>

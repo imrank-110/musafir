@@ -82,11 +82,11 @@ function PrayerTimeline({ prayerTimes, currentPrayer }) {
   ];
 
   return (
-    <div className="bg-gray-800/80 backdrop-blur rounded-xl p-4 border border-gray-700">
-      <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+    <div className="glass-card p-4">
+      <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">
         <span>🕌</span> Prayer Timeline
       </h3>
-      <div className="space-y-2">
+      <div className="neon-timeline-line space-y-2 pl-6">
         {order.map(({ key, label, icon }, idx) => {
           const time = prayerTimes[key];
           const isCurrent = currentPrayer?.current?.name === key;
@@ -99,12 +99,12 @@ function PrayerTimeline({ prayerTimes, currentPrayer }) {
           return (
             <div
               key={key}
-              className={`flex items-center justify-between p-2 rounded-lg transition-all ${
+              className={`flex items-center justify-between p-3 rounded-xl transition-all duration-300 ${
                 isCurrent
-                  ? 'bg-emerald-900/50 border border-emerald-500/50 shadow-lg shadow-emerald-900/20'
+                  ? 'glass-card-strong border-emerald-500/40 animate-neon-pulse'
                   : isPast
                   ? 'opacity-40'
-                  : 'hover:bg-gray-700/30'
+                  : 'hover:bg-white/5'
               }`}
             >
               <div className="flex items-center gap-3">
@@ -118,7 +118,7 @@ function PrayerTimeline({ prayerTimes, currentPrayer }) {
                   {hoursToTimeString(time)}
                 </span>
                 {isCurrent && (
-                  <span className="px-2 py-0.5 bg-emerald-600 text-white text-xs rounded-full font-bold animate-pulse">
+                  <span className="px-2 py-0.5 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white text-xs rounded-full font-bold animate-pulse shadow-lg shadow-emerald-500/30">
                     NOW
                   </span>
                 )}
@@ -129,7 +129,7 @@ function PrayerTimeline({ prayerTimes, currentPrayer }) {
       </div>
 
       {currentPrayer && (
-        <div className="mt-4 p-3 bg-gray-900/50 rounded-lg border border-gray-700">
+        <div className="mt-4 p-3 bg-slate-900/50 rounded-xl border border-white/5">
           <div className="text-sm text-gray-400 mb-1">
             {currentPrayer.current?.label} window closes in:
           </div>
@@ -159,13 +159,13 @@ function FlightInfoPanel({ flightState }) {
   const totalM = (durationMinutes || 0) % 60;
 
   return (
-    <div className="bg-gray-800/80 backdrop-blur rounded-xl p-4 border border-gray-700">
-      <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+    <div className="glass-card p-4">
+      <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">
         <span>✈️</span> {flightCode}
       </h3>
 
       {/* Route */}
-      <div className="flex items-center justify-between mb-4 p-3 bg-gray-900/50 rounded-lg">
+      <div className="flex items-center justify-between mb-4 p-3 bg-slate-900/50 rounded-xl border border-white/5">
         <div className="text-center">
           <div className="text-xs text-gray-500">{departure?.code}</div>
           <div className="text-sm font-bold text-white">{departure?.city}</div>
@@ -362,11 +362,11 @@ export default function FlightTracker() {
   const mapBounds = getMapBounds();
 
   return (
-    <div className="min-h-screen bg-gray-900">
+    <div className="min-h-screen">
       {/* Header */}
-      <div className="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-gray-700 p-4">
+      <div className="bg-slate-900/40 backdrop-blur-xl border-b border-white/5 p-4">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">
             <span>✈️</span> In-Flight Prayer Tracker
           </h1>
           <p className="text-gray-400 text-sm mt-1">
@@ -377,7 +377,7 @@ export default function FlightTracker() {
 
       {/* Input Form */}
       <div className="max-w-7xl mx-auto p-4">
-        <div className="bg-gray-800/80 backdrop-blur rounded-xl p-4 border border-gray-700 mb-4">
+        <div className="glass-card p-4 mb-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div>
               <label className="block text-sm text-gray-400 mb-1">Flight Code</label>
