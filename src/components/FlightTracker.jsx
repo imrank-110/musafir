@@ -753,19 +753,11 @@ export default function FlightTracker() {
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="w-2 h-2 bg-[#f59e0b] rounded-full border border-white shadow-sm" />
-                  <span>Dhuhr</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-2 h-2 bg-[#8b5cf6] rounded-full border border-white shadow-sm" />
-                  <span>Asr</span>
+                  <span>Dhuhr/Asr</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="w-2 h-2 bg-[#ef4444] rounded-full border border-white shadow-sm" />
-                  <span>Maghrib</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-2 h-2 bg-[#6366f1] rounded-full border border-white shadow-sm" />
-                  <span>Isha</span>
+                  <span>Maghrib/Isha</span>
                 </div>
               </div>
             </div>

@@ -484,62 +484,49 @@ export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, duration
     });
   }
 
-  // Build individual prayer time markers — scan the schedule to find when each
-  // individual prayer (Fajr, Sunrise, Dhuhr, Asr, Maghrib, Isha) occurs
-  // in flight-elapsed time. Each prayer is a single event (when it enters),
-  // not a window. Sunrise is included explicitly for verification.
-  const individualPrayers = [
-    { key: 'fajr',     label: 'Fajr',     color: '#3b82f6' },
-    { key: 'sunrise',  label: 'Sunrise',  color: '#f97316' },
-    { key: 'dhuhr',    label: 'Dhuhr',    color: '#f59e0b' },
-    { key: 'asr',      label: 'Asr',      color: '#8b5cf6' },
-    { key: 'maghrib',  label: 'Maghrib',  color: '#ef4444' },
-    { key: 'isha',     label: 'Isha',     color: '#6366f1' },
+  // Build combined prayer slot markers — scan the schedule to find when each
+  // combined slot (Fajr, Dhuhr/Asr, Maghrib/Isha) first becomes active,
+  // plus Sunrise as a separate entry so users know the Fajr window.
+  // Uses the activeSlot detection (which correctly handles wrap-around via isInSlot()).
+  const slotDefs = [
+    { key: 'fajr',        label: 'Fajr',        color: '#3b82f6', slotKey: 'fajr' },
+    { key: 'sunrise',     label: 'Sunrise',     color: '#f97316', slotKey: null },
+    { key: 'dhuhrAsr',    label: 'Dhuhr/Asr',   color: '#f59e0b', slotKey: 'dhuhrAsr' },
+    { key: 'maghribIsha', label: 'Maghrib/Isha', color: '#ef4444', slotKey: 'maghribIsha' },
   ];
 
-  for (const p of individualPrayers) {
-    // Find the closest schedule entry where the plane's local time has
-    // reached ≥ this prayer's time, but hasn't yet reached the next prayer.
-    let closestEntry = null;
-    let closestDiff = Infinity;
+  for (const def of slotDefs) {
+    let foundEntry = null;
 
     for (const entry of schedule) {
-      const pt = entry.prayerTimes;
-      const prayerTime = pt[p.key];
-      if (prayerTime == null) continue;
-
-      // How close is the plane's local time to this prayer time?
-      let diff = entry.localHours - prayerTime;
-      // Handle wrap-around: if prayer is early morning (e.g., Fajr 04:30)
-      // and local time is late night (e.g., 23:00), diff should be small
-      // meaning the prayer already passed or is approaching
-      if (diff < -12) diff += 24;
-      if (diff > 12) diff -= 24;
-
-      const absDiff = Math.abs(diff);
-      // We want the entry closest to the prayer time (within 30 minutes)
-      if (absDiff < 0.5 && absDiff < closestDiff) {
-        closestDiff = absDiff;
-        closestEntry = entry;
+      if (def.slotKey === null) {
+        // Sunrise: first entry where localHours >= prayerTimes.sunrise
+        if (entry.localHours >= entry.prayerTimes.sunrise) {
+          foundEntry = entry;
+          break;
+        }
+      } else {
+        // Combined slot: first entry where activeSlot matches
+        if (entry.activeSlot && entry.activeSlot.key === def.slotKey) {
+          foundEntry = entry;
+          break;
+        }
       }
     }
 
-    if (closestEntry) {
-      const elapsedAtStart = closestEntry.elapsedMin;
+    if (foundEntry) {
+      const elapsedAtStart = foundEntry.elapsedMin;
       const startIdx = Math.min(Math.floor((elapsedAtStart / durationMinutes) * (pathPoints.length - 1)), pathPoints.length - 1);
       const startPos = pathPoints[startIdx];
 
       prayerMarkers.push({
-        key: p.key,
-        label: p.label,
-        short: p.label.charAt(0),
-        color: p.color,
+        key: def.key,
+        label: def.label,
+        color: def.color,
         elapsedAtStart,
-        elapsedAtEnd: elapsedAtStart,
-        windowMinutes: 0,
         position: startPos,
-        localTime: hoursToTimeString(closestEntry.prayerTimes[p.key]),
-        qibla: closestEntry.qibla,
+        localTime: hoursToTimeString(foundEntry.prayerTimes[def.key === 'sunrise' ? 'sunrise' : def.slotKey === 'fajr' ? 'fajr' : def.slotKey === 'dhuhrAsr' ? 'dhuhr' : 'maghrib']),
+        qibla: foundEntry.qibla,
         status: 'during-flight',
       });
     }
