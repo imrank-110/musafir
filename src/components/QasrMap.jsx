@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { MapContainer, TileLayer, Polygon, Circle, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import {
   calculateQasrStatus,
@@ -9,6 +9,10 @@ import {
   generateHaddBoundary,
   haversineDistance,
   HADD_AL_TARAKHKHUS_KM,
+  reverseGeocode,
+  fetchCityBoundary,
+  findCityForLocation,
+  saveUserCity,
 } from '../utils/geoUtils';
 
 // ─── Custom Icons ────────────────────────────────────────────────────────────
@@ -63,7 +67,6 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
   const handleSubmit = useCallback(() => {
     if (!qasrStatus) return;
 
-    // Determine base status from location
     const isTraveler = qasrStatus.status === 'traveler';
     const stayDays = parseInt(stayDuration, 10);
 
@@ -72,7 +75,6 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
     let fasting = isTraveler ? 'Invalid (Must make up via Qada)' : 'Valid';
     let details = [];
 
-    // Rule 1: If staying 10 days or more in one place, you become a resident
     if (isTraveler && stayDays >= 10) {
       finalStatus = 'resident';
       prayers = 'Tamam (Full 4 Rak\'ahs)';
@@ -80,7 +82,6 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
       details.push('You intend to stay 10 days or more → You are considered a Resident at your destination.');
     }
 
-    // Rule 2: Passing through Watan (hometown) resets travel
     if (passingThroughWatan === 'yes') {
       finalStatus = 'resident';
       prayers = 'Tamam (Full 4 Rak\'ahs)';
@@ -88,7 +89,6 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
       details.push('You are passing through your Watan (hometown) → Travel status is reset. You are a Resident here.');
     }
 
-    // Rule 3: If not a traveler at all
     if (!isTraveler) {
       details.push('You are within the city limits (\'Urf boundary) → You are a Resident.');
     }
@@ -273,7 +273,6 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
         </div>
       )}
 
-      {/* Progress indicator */}
       <div className="flex justify-center gap-2 mt-4">
         {[1, 2, 3].map((s) => (
           <div
@@ -293,11 +292,11 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
 export default function QasrMap() {
   const [location, setLocation] = useState(null);
   const [cityName, setCityName] = useState('');
-  const [manualAddress, setManualAddress] = useState('');
   const [qasrStatus, setQasrStatus] = useState(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showQuestionnaire, setShowQuestionnaire] = useState(false);
+  const [detectedCityName, setDetectedCityName] = useState('');
   const supportedCities = getSupportedCities();
 
   // Get user's current location
@@ -312,46 +311,86 @@ export default function QasrMap() {
     }
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const { latitude, longitude } = position.coords;
         setLocation({ lat: latitude, lng: longitude });
         setIsLoading(false);
-        // Try to find the nearest city
-        findNearestCity(latitude, longitude);
+
+        // Step 1: Check if location falls inside any known city boundary
+        const matchedCity = findCityForLocation(latitude, longitude);
+        if (matchedCity) {
+          setCityName(matchedCity);
+          const status = calculateQasrStatus(latitude, longitude, matchedCity);
+          setQasrStatus(status);
+          setError('');
+          setDetectedCityName(`Snapped to ${matchedCity}`);
+          return;
+        }
+
+        // Step 2: Reverse geocode to get city name
+        try {
+          const geoResult = await reverseGeocode(latitude, longitude);
+          const reverseCity = geoResult.city;
+
+          if (!reverseCity) {
+            setError('Could not determine your city. Please select one from the dropdown.');
+            return;
+          }
+
+          // Step 3: Check the reverse-geocoded city in our database
+          const cityData = getUrfBoundary(reverseCity);
+          if (cityData) {
+            setCityName(reverseCity);
+            const status = calculateQasrStatus(latitude, longitude, reverseCity);
+            setQasrStatus(status);
+            setError('');
+            setDetectedCityName(`Located: ${reverseCity}, ${geoResult.state || ''}`);
+            return;
+          }
+
+          // Step 4: Fetch the city boundary from Nominatim
+          setDetectedCityName(`Discovering: ${reverseCity}...`);
+          const boundaryData = await fetchCityBoundary(reverseCity, geoResult.state || '');
+
+          if (boundaryData && boundaryData.boundary) {
+            // Save to user-contributed cache
+            const newCityData = {
+              center: boundaryData.center,
+              boundary: boundaryData.boundary,
+            };
+            saveUserCity(reverseCity, newCityData);
+
+            setCityName(reverseCity);
+            const status = calculateQasrStatus(latitude, longitude, reverseCity);
+            setQasrStatus(status);
+            setError('');
+            setDetectedCityName(`New city discovered: ${reverseCity}`);
+          } else {
+            // Fallback: use the city center as a point
+            // This means the user can still see their location on the map
+            setCityName('');
+            setQasrStatus({
+              isInsideUrf: null,
+              distanceFromBoundary: null,
+              isOutsideHadd: true,
+              status: 'unknown',
+              message: `No boundary data available for "${reverseCity}". Based on your distance from known cities, you are likely a Traveler (Musafir). Please consult a qualified Islamic authority.`,
+              cityName: reverseCity,
+              cityCenter: geoResult ? [geoResult.lat, geoResult.lng] : [latitude, longitude],
+            });
+            setDetectedCityName(`Unknown city: ${reverseCity}`);
+          }
+        } catch (e) {
+          setError(`Could not determine location: ${e.message}. Please select a city from the dropdown.`);
+        }
       },
       (err) => {
-        setError(`Could not get location: ${err.message}. Please enter a city manually.`);
+        setError(`Could not get location: ${err.message}. Please select a city from the dropdown.`);
         setIsLoading(false);
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 15000 }
     );
   }, []);
-
-  // Find the nearest supported city
-  const findNearestCity = useCallback((lat, lng) => {
-    let nearest = null;
-    let minDist = Infinity;
-
-    for (const city of supportedCities) {
-      const boundary = getUrfBoundary(city);
-      if (boundary && boundary.center) {
-        const center = boundary.center;
-        const dist = haversineDistance(lat, lng, center[0], center[1]);
-        if (dist < minDist) {
-          minDist = dist;
-          nearest = city;
-        }
-      }
-    }
-
-    if (nearest) {
-      setCityName(nearest);
-      const status = calculateQasrStatus(lat, lng, nearest);
-      setQasrStatus(status);
-    } else {
-      setError('No supported city found near your location. Please select a city manually.');
-    }
-  }, [supportedCities]);
 
   // Handle manual city selection
   const handleCitySelect = useCallback((city) => {
@@ -362,39 +401,17 @@ export default function QasrMap() {
       const status = calculateQasrStatus(cityData.center[0], cityData.center[1], city);
       setQasrStatus(status);
       setError('');
+      setDetectedCityName('');
     }
   }, []);
-
-  // Handle manual address entry (simplified - just uses city center)
-  const handleManualSubmit = useCallback(() => {
-    if (!manualAddress.trim()) {
-      setError('Please enter a city name.');
-      return;
-    }
-
-    const input = manualAddress.trim();
-    // Check if it matches a supported city
-    const match = supportedCities.find(
-      (c) => c.toLowerCase() === input.toLowerCase()
-    );
-
-    if (match) {
-      handleCitySelect(match);
-    } else {
-      setError(`City "${input}" not found in our database. Supported cities: ${supportedCities.join(', ')}`);
-    }
-  }, [manualAddress, supportedCities, handleCitySelect]);
 
   // Generate map overlays
   const urfPolygon = cityName ? generateUrfPolygon(cityName) : null;
   const haddBoundary = cityName ? generateHaddBoundary(cityName) : null;
 
-  // Determine colors based on status
+  // Colors: Urf = green (#22c55e), Hadd = gray (#6b7280)
   const getStatusColors = () => {
-    if (!qasrStatus) return { urfColor: '#f59e0b', haddColor: '#6b7280' };
-    if (qasrStatus.status === 'traveler') return { urfColor: '#ef4444', haddColor: '#10b981' };
-    if (qasrStatus.status === 'transition') return { urfColor: '#ef4444', haddColor: '#f59e0b' };
-    return { urfColor: '#ef4444', haddColor: '#6b7280' };
+    return { urfColor: '#22c55e', haddColor: '#6b7280' };
   };
 
   const { urfColor, haddColor } = getStatusColors();
@@ -417,7 +434,7 @@ export default function QasrMap() {
       <div className="max-w-7xl mx-auto p-4">
         {/* Input Controls */}
         <div className="bg-gray-800/80 backdrop-blur rounded-xl p-4 border border-gray-700 mb-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-gray-400 mb-1">Your Location</label>
               <button
@@ -435,6 +452,9 @@ export default function QasrMap() {
                   </>
                 )}
               </button>
+              {detectedCityName && (
+                <p className="text-xs text-emerald-400 mt-1">{detectedCityName}</p>
+              )}
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1">Or Select a City</label>
@@ -450,25 +470,6 @@ export default function QasrMap() {
                   <option key={city} value={city}>{city}</option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Or Type a City</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={manualAddress}
-                  onChange={(e) => setManualAddress(e.target.value)}
-                  placeholder="City name..."
-                  className="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
-                  onKeyDown={(e) => e.key === 'Enter' && handleManualSubmit()}
-                />
-                <button
-                  onClick={handleManualSubmit}
-                  className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
-                >
-                  Go
-                </button>
-              </div>
             </div>
           </div>
 
@@ -496,14 +497,14 @@ export default function QasrMap() {
                 />
                 <MapController center={location ? [location.lat, location.lng] : null} zoom={10} />
 
-                {/* 'Urf Boundary (Red - Resident Zone) */}
+                {/* 'Urf Boundary (Green - Resident Zone) */}
                 {urfPolygon && (
                   <Polygon
                     positions={urfPolygon}
                     pathOptions={{
-                      color: '#ef4444',
+                      color: '#22c55e',
                       weight: 3,
-                      fillColor: '#ef4444',
+                      fillColor: '#22c55e',
                       fillOpacity: 0.15,
                     }}
                   >
@@ -511,23 +512,23 @@ export default function QasrMap() {
                       <div className="text-sm">
                         <strong>Estimated 'Urf Boundary</strong>
                         <br />
-                        <span className="text-red-500">Resident Zone (Tamam)</span>
+                        <span className="text-green-500">Resident Zone (Tamam)</span>
                         <br />
-                        <span className="text-gray-500">Inside city limits</span>
+                        <span className="text-gray-400">Inside city limits</span>
                       </div>
                     </Popup>
                   </Polygon>
                 )}
 
-                {/* Hadd al-Tarakhkhus Boundary (22 km) — buffered polygon (same shape as 'Urf) */}
+                {/* Hadd al-Tarakhkhus Boundary (22 km) — Gray dashed polygon */}
                 {haddBoundary && (
                   <Polygon
                     positions={haddBoundary}
                     pathOptions={{
-                      color: '#10b981',
+                      color: '#6b7280',
                       weight: 4,
-                      fillColor: '#10b981',
-                      fillOpacity: 0.12,
+                      fillColor: '#6b7280',
+                      fillOpacity: 0.08,
                       dashArray: '12, 8',
                     }}
                   >
@@ -535,7 +536,7 @@ export default function QasrMap() {
                       <div className="text-sm">
                         <strong>Hadd al-Tarakhkhus</strong>
                         <br />
-                        <span className="text-emerald-500">22 km (13.7 mi) from 'Urf boundary</span>
+                        <span className="text-gray-400">22 km (13.7 mi) from 'Urf boundary</span>
                         <br />
                         <span className="text-gray-500">Beyond this = Traveler (Qasr)</span>
                       </div>
@@ -543,7 +544,7 @@ export default function QasrMap() {
                   </Polygon>
                 )}
 
-                {/* City center marker */}
+                {/* User location marker */}
                 {location && (
                   <Marker position={[location.lat, location.lng]} icon={userLocationIcon}>
                     <Popup>
@@ -576,11 +577,11 @@ export default function QasrMap() {
             {/* Legend */}
             <div className="mt-2 flex flex-wrap gap-4 text-xs text-gray-400">
               <div className="flex items-center gap-1">
-                <div className="w-4 h-4 rounded" style={{ background: '#ef4444', opacity: 0.5 }} />
+                <div className="w-4 h-4 rounded" style={{ background: '#22c55e', opacity: 0.5 }} />
                 <span>'Urf Boundary (Resident Zone)</span>
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-4 h-4 rounded" style={{ background: haddColor, opacity: 0.5 }} />
+                <div className="w-4 h-4 rounded" style={{ background: '#6b7280', opacity: 0.5 }} />
                 <span>Hadd al-Tarakhkhus (22 km)</span>
               </div>
               <div className="flex items-center gap-1">
@@ -598,7 +599,7 @@ export default function QasrMap() {
                 qasrStatus.status === 'traveler'
                   ? 'bg-emerald-900/30 border-emerald-600/50'
                   : qasrStatus.status === 'resident'
-                  ? 'bg-blue-900/30 border-blue-600/50'
+                  ? 'bg-green-900/30 border-green-600/50'
                   : 'bg-yellow-900/30 border-yellow-600/50'
               }`}>
                 <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
@@ -610,7 +611,7 @@ export default function QasrMap() {
                   </div>
                   <div className={`text-xl font-bold ${
                     qasrStatus.status === 'traveler' ? 'text-emerald-300' :
-                    qasrStatus.status === 'resident' ? 'text-blue-300' : 'text-yellow-300'
+                    qasrStatus.status === 'resident' ? 'text-green-300' : 'text-yellow-300'
                   }`}>
                     {qasrStatus.status === 'traveler' ? 'Traveler' :
                      qasrStatus.status === 'resident' ? 'Resident' : 'Transition Zone'}
@@ -618,9 +619,9 @@ export default function QasrMap() {
                 </div>
                 <p className="text-sm text-gray-300 mb-3">{qasrStatus.message}</p>
                 <div className="text-xs text-gray-500 space-y-1">
-                  <div>City: <span className="text-gray-300">{qasrStatus.cityName}</span></div>
-                  <div>Distance from boundary: <span className="text-gray-300">{Math.abs(qasrStatus.distanceKm).toFixed(1)} km</span></div>
-                  <div>Hadd al-Tarakhkhus: <span className="text-gray-300">{qasrStatus.haddDistance} km</span></div>
+                  {qasrStatus.cityName && <div>City: <span className="text-gray-300">{qasrStatus.cityName}</span></div>}
+                  {qasrStatus.distanceKm != null && <div>Distance from boundary: <span className="text-gray-300">{Math.abs(qasrStatus.distanceKm).toFixed(1)} km</span></div>}
+                  <div>Hadd al-Tarakhkhus: <span className="text-gray-300">{qasrStatus.haddDistance || HADD_AL_TARAKHKHUS_KM} km</span></div>
                 </div>
               </div>
             )}
@@ -632,11 +633,13 @@ export default function QasrMap() {
               </h4>
               <p className="text-xs text-yellow-200/70 leading-relaxed">
                 The 'Urf boundary shown is an <strong>estimation</strong> based on structural density and 
-                census data approximations. Per Ayatollah Sistani, the traveler boundary begins when a 
-                person leaves the city's common understanding or sprawling continuity ('Urf), rather than 
-                official municipal signs. This digital approximation is intended to guide your conscience 
-                but <strong>does not replace</strong> your own determination of where the continuous urban 
-                area ends. Please use your own judgment and consult a qualified Islamic authority if in doubt.
+                census data approximations, or sourced from OpenStreetMap administrative boundaries. 
+                Per Ayatollah Sistani (Islamic Laws, Ruling 1266): <em>"The start of the eight farsakhs 
+                must be calculated from the point beyond which a person is deemed to be a traveller; 
+                this is usually the outskirts of a town."</em> This digital approximation is intended to 
+                guide your conscience but <strong>does not replace</strong> your own determination of 
+                where the continuous urban area ends. Please use your own judgment and consult a 
+                qualified Islamic authority if in doubt.
               </p>
             </div>
 
