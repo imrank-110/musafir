@@ -177,7 +177,11 @@ function PrayerTimeline({ flightState, prayerMarkers, currentPrayer, qibla }) {
       {/* Timeline */}
       <div className="relative pl-6">
         <div className="absolute left-[8px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-[#c4a882]/60 via-[#b89978]/60 to-[#c4a882]/60 shadow-[0_0_8px_rgba(196,168,130,0.3)]" />
-        {prayerMarkers.map((marker) => {
+        {[...prayerMarkers]
+          .filter(m => m.status !== 'not-during-flight')
+          .sort((a, b) => a.elapsedAtStart - b.elapsedAtStart)
+          .concat(prayerMarkers.filter(m => m.status === 'not-during-flight'))
+          .map((marker) => {
           const isCurrent = currentPrayer?.key === marker.key;
           const isPast = currentPrayer && prayerMarkers.indexOf(marker) < prayerMarkers.indexOf(
             prayerMarkers.find(m => m.key === currentPrayer.key)
@@ -219,10 +223,10 @@ function PrayerTimeline({ flightState, prayerMarkers, currentPrayer, qibla }) {
                   {marker.status !== 'not-during-flight' ? (
                     <>
                       <div className="text-xs text-[#a09080]">
-                        {Math.round(marker.windowMinutes)} min
+                        {Math.floor(marker.windowMinutes / 60)}h {Math.round(marker.windowMinutes % 60)}m
                       </div>
                       {marker.qibla && (
-                        <div className="text-xs text-[#c4a882]">{marker.qibla.bearingText}</div>
+                        <div className="text-xs text-[#c4a882]">Qibla Direction: {marker.qibla.bearingText}</div>
                       )}
                     </>
                   ) : (
@@ -370,12 +374,13 @@ export default function FlightTracker() {
   const [isRunning, setIsRunning] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [elapsed, setElapsed] = useState(0);
+  const [showOverview, setShowOverview] = useState(false);
 
   const intervalRef = useRef(null);
   const airports = getAirports();
 
-  // Pre-compute the schedule when simulation starts
-  const startSimulation = useCallback(() => {
+  // Show overview with map + prayer schedule (no simulation yet)
+  const handleShowOverview = useCallback(() => {
     if (!depCode || !arrCode) {
       setError('Please select departure and arrival airports.');
       return;
@@ -405,10 +410,9 @@ export default function FlightTracker() {
     setFlightSchedule(schedule);
     setPrayerMarkers(schedule.prayerMarkers);
     setElapsed(0);
-    setIsRunning(true);
     setSpeed(1);
 
-    // Initial state (before takeoff)
+    // Initial state (before takeoff, no tick running)
     const initial = getFlightStateAtElapsed(
       schedule.schedule, 0, durationMinutes, pathPoints,
       depCode, arrCode, newSession.route.departure, newSession.route.arrival
@@ -416,7 +420,13 @@ export default function FlightTracker() {
     setFlightState(initial);
     setCurrentPrayer(initial.currentPrayer);
     setQibla(initial.qibla);
+    setShowOverview(true);
   }, [depCode, arrCode, depTime, durationH, durationM, depDate, nextDay]);
+
+  // Start the simulation tick (from the overview state)
+  const beginSimulation = useCallback(() => {
+    setIsRunning(true);
+  }, []);
 
   const stopSimulation = useCallback(() => {
     setIsRunning(false);
@@ -593,13 +603,28 @@ export default function FlightTracker() {
                 />
                 Arrive next day
               </label>
-              {!isRunning ? (
+              {!showOverview ? (
                 <button
-                  onClick={startSimulation}
+                  onClick={handleShowOverview}
                   className="w-full px-4 py-2 bg-[#c4a882] hover:bg-[#b89978] text-white font-bold rounded-lg transition-colors"
                 >
-                  Start Simulation
+                  Go
                 </button>
+              ) : !isRunning ? (
+                <div className="flex gap-1">
+                  <button
+                    onClick={beginSimulation}
+                    className="flex-1 px-3 py-2 bg-[#b89978] hover:bg-[#a08060] text-white font-bold rounded-lg transition-colors text-sm"
+                  >
+                    Start Simulation
+                  </button>
+                  <button
+                    onClick={() => { setShowOverview(false); setFlightState(null); setPrayerMarkers([]); }}
+                    className="flex-1 px-3 py-2 bg-[#d0b0a0] hover:bg-[#c0a090] text-white font-bold rounded-lg transition-colors text-sm"
+                  >
+                    Back
+                  </button>
+                </div>
               ) : (
                 <div className="flex gap-1">
                   {flightState?.state === 'pre-takeoff' && (
@@ -687,9 +712,9 @@ export default function FlightTracker() {
                           <br />
                           ~{Math.floor(marker.elapsedAtStart / 60)}h {Math.round(marker.elapsedAtStart % 60)}m into flight
                           <br />
-                          Window: {Math.round(marker.windowMinutes)} min
+                          Window: {Math.floor(marker.windowMinutes / 60)}h {Math.round(marker.windowMinutes % 60)}m
                           <br />
-                          Qibla: {marker.qibla?.bearingText || '--'}
+                          Qibla Direction: {marker.qibla?.bearingText || '--'}
                           <br />
                           Local at prayer: {marker.localTime}
                           {currentPrayer?.key === marker.key && (
