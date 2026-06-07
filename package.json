@@ -13,7 +13,10 @@
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios",
     "build:android": "npm run build && npx cap copy android && npx cap open android",
-    "build:ios": "npm run build && npx cap copy ios && npx cap open ios"
+    "build:ios": "npm run build && npx cap copy ios && npx cap open ios",
+    "test:e2e": "npx playwright test",
+    "test:e2e:ui": "npx playwright test --ui",
+    "test:e2e:headed": "npx playwright test --headed"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.0",
@@ -31,6 +34,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "^4.3.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
