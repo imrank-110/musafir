@@ -145,19 +145,69 @@ function PrayerTimeline({ flightState, prayerMarkers, currentPrayerIndex, qibla 
         </div>
       </div>
 
-      {qibla && (
-        <div className="flex items-center justify-between mb-4 p-3 bg-[#f5f0eb] rounded-xl border border-[#e0d5c8]">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#c4a882]/20 flex items-center justify-center">
-              <div className="w-6 h-6 border-2 border-[#c4a882] rounded-sm" style={{ transform: `rotate(${qibla.bearing}deg)` }} />
+      {/* Upcoming Prayer + Qibla Arrow */}
+      {(() => {
+        // Find the next upcoming prayer (first marker that hasn't started yet)
+        const nextPrayer = activePrayers.find(m => m.elapsedAtStart > elapsedMinutes);
+        const currentPrayer = activePrayers.find(m => m.elapsedAtStart <= elapsedMinutes && 
+          (!activePrayers[activePrayers.indexOf(m) + 1] || activePrayers[activePrayers.indexOf(m) + 1].elapsedAtStart > elapsedMinutes));
+
+        const displayPrayer = currentPrayer || nextPrayer || activePrayers[activePrayers.length - 1];
+        const qiblaForDisplay = displayPrayer?.qibla || qibla;
+
+        if (!displayPrayer && !qiblaForDisplay) return null;
+
+        const timeRemaining = displayPrayer && nextPrayer 
+          ? Math.max(0, nextPrayer.elapsedAtStart - elapsedMinutes) 
+          : displayPrayer 
+            ? Math.max(0, (displayPrayer.elapsedAtStart + 60) - elapsedMinutes)
+            : 0;
+
+        const isActive = currentPrayer !== null;
+
+        return (
+          <div className="mb-4 p-3 bg-[#f5f0eb] rounded-xl border border-[#e0d5c8]">
+            <div className="text-xs text-[#a09080] mb-2 font-semibold uppercase tracking-wider">
+              {isActive ? 'Current Prayer' : 'Upcoming Prayer'}
             </div>
-            <div>
-              <div className="text-xs text-[#a09080]">Qibla Direction Now</div>
-              <div className="text-sm font-bold text-[#3d352e]">{qibla.bearingText}</div>
+            <div className="flex items-center justify-between">
+              <div>
+                {displayPrayer && (
+                  <div className="text-sm font-bold text-[#3d352e]">
+                    {displayPrayer.label}
+                  </div>
+                )}
+                <div className="text-xs text-[#a09080]">
+                  {isActive ? 'Active now' : `Starts in ${Math.floor(timeRemaining / 60)}h ${Math.round(timeRemaining % 60)}m`}
+                </div>
+              </div>
+              {qiblaForDisplay && (
+                <div className="flex flex-col items-center">
+                  <div className="relative w-12 h-12">
+                    {/* Circular dial */}
+                    <div className="absolute inset-0 rounded-full border-2 border-[#c4a882]/40" />
+                    {/* Arrow pointing toward Qibla */}
+                    <div
+                      className="absolute top-1/2 left-1/2 w-0.5 h-[18px] origin-bottom rounded-full"
+                      style={{
+                        background: '#c4a882',
+                        transform: `translate(-50%, -100%) rotate(${qiblaForDisplay.bearing}deg)`,
+                      }}
+                    >
+                      <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[5px] border-r-[5px] border-b-[8px] border-l-transparent border-r-transparent border-b-[#c4a882]" />
+                    </div>
+                    {/* Center dot */}
+                    <div className="absolute top-1/2 left-1/2 w-2 h-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#c4a882]" />
+                  </div>
+                  <div className="text-[10px] text-[#c4a882] font-bold mt-1">
+                    {qiblaForDisplay.bearingText}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       <div className="relative pl-6">
         <div className="absolute left-[8px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-[#c4a882]/60 via-[#b89978]/60 to-[#c4a882]/60 shadow-[0_0_8px_rgba(196,168,130,0.3)]" />
