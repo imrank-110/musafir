@@ -156,12 +156,17 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
 
   if (verdict) {
     return (
-      <div className="boarding-pass p-6">
+      <div className="bg-gradient-to-br from-slate-900/60 via-slate-800/50 to-slate-900/60 backdrop-blur-2xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl p-6 relative overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none" style={{
+          background: 'conic-gradient(from 0deg, transparent 0deg, rgba(16,185,129,0.03) 60deg, transparent 120deg, rgba(59,130,246,0.03) 180deg, transparent 240deg, rgba(16,185,129,0.03) 300deg, transparent 360deg)',
+          animation: 'glass-shimmer 8s linear infinite',
+          backgroundSize: '200% 200%',
+        }} />
         <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">
           <span>⚖️</span> Your Ruling (Hukm)
         </h3>
 
-        <div className={`boarding-pass p-4 mb-4 ${
+        <div className={`bg-gradient-to-br from-slate-900/60 via-slate-800/50 to-slate-900/60 backdrop-blur-2xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl p-4 relative overflow-hidden ${
           verdict.finalStatus === 'traveler'
             ? 'border-emerald-500/30'
             : 'border-blue-500/30'
@@ -220,7 +225,7 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
   }
 
   return (
-    <div className="glass-card p-4">
+    <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl p-4 transition-all duration-500 hover:border-white/20">
       <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
         <span>⚖️</span> Step {step} of 3
       </h3>
@@ -647,7 +652,7 @@ export default function QasrMap() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto p-4">
         {/* Input Controls */}
-        <div className="glass-card p-4 mb-4">
+        <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl p-4 mb-4 transition-all duration-500 hover:border-white/20">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-gray-400 mb-1">Your Location</label>
@@ -839,7 +844,7 @@ export default function QasrMap() {
           <div className="space-y-4">
             {/* Status Card */}
             {qasrStatus && (
-              <div className={`glass-card p-4 ${
+              <div className={`bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl p-4 transition-all duration-500 hover:border-white/20 ${
                 qasrStatus.status === 'traveler'
                   ? 'border-emerald-500/30'
                   : qasrStatus.status === 'resident'
@@ -880,7 +885,7 @@ export default function QasrMap() {
             )}
 
             {/* Driving Monitor Controls */}
-            <div className="glass-card p-4">
+            <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl p-4 transition-all duration-500 hover:border-white/20">
               <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                 <span>🚗</span> Driving Monitor
               </h3>

@@ -82,11 +82,12 @@ function PrayerTimeline({ prayerTimes, currentPrayer }) {
   ];
 
   return (
-    <div className="glass-card p-4">
+    <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl p-4 transition-all duration-500 hover:border-white/20">
       <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">
         <span>🕌</span> Prayer Timeline
       </h3>
-      <div className="neon-timeline-line space-y-2 pl-6">
+      <div className="relative pl-6">
+        <div className="absolute left-[8px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-emerald-500/60 via-blue-500/60 to-emerald-500/60 shadow-[0_0_8px_rgba(16,185,129,0.3)]" />
         {order.map(({ key, label, icon }, idx) => {
           const time = prayerTimes[key];
           const isCurrent = currentPrayer?.current?.name === key;
@@ -101,7 +102,7 @@ function PrayerTimeline({ prayerTimes, currentPrayer }) {
               key={key}
               className={`flex items-center justify-between p-3 rounded-xl transition-all duration-300 ${
                 isCurrent
-                  ? 'glass-card-strong border-emerald-500/40 animate-neon-pulse'
+                  ? 'bg-slate-900/60 backdrop-blur-2xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl border-emerald-500/40 animate-neon-pulse'
                   : isPast
                   ? 'opacity-40'
                   : 'hover:bg-white/5'
@@ -159,7 +160,7 @@ function FlightInfoPanel({ flightState }) {
   const totalM = (durationMinutes || 0) % 60;
 
   return (
-    <div className="glass-card p-4">
+    <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl p-4 transition-all duration-500 hover:border-white/20">
       <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">
         <span>✈️</span> {flightCode}
       </h3>
@@ -377,7 +378,7 @@ export default function FlightTracker() {
 
       {/* Input Form */}
       <div className="max-w-7xl mx-auto p-4">
-        <div className="glass-card p-4 mb-4">
+        <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] rounded-3xl p-4 mb-4 transition-all duration-500 hover:border-white/20">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div>
               <label className="block text-sm text-gray-400 mb-1">Flight Code</label>
