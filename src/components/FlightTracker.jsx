@@ -112,26 +112,13 @@ function QiblaLine({ fromLat, fromLng, bearing }) {
   );
 }
 
-// ─── Countdown Timer ─────────────────────────────────────────────────────────
+// ─── Individual Prayer Timeline ─────────────────────────────────────────────
 
-function CountdownTimer({ seconds }) {
-  if (seconds <= 0) return <span className="text-[#c0392b] font-bold">CLOSED</span>;
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  return (
-    <span className="font-mono text-lg font-bold text-[#c4a882]">
-      {String(h).padStart(2, '0')}:{String(m).padStart(2, '0')}:{String(s).padStart(2, '0')}
-    </span>
-  );
-}
-
-// ─── Combined Prayer Timeline ────────────────────────────────────────────────
-
-function PrayerTimeline({ flightState, prayerMarkers, currentPrayer, qibla }) {
+function PrayerTimeline({ flightState, prayerMarkers, currentPrayerIndex, qibla }) {
   if (!flightState || !prayerMarkers) return null;
 
   const { elapsedMinutes, durationMinutes, localTime } = flightState;
+  const activePrayers = prayerMarkers.filter(m => m.status !== 'not-during-flight');
 
   return (
     <div className="bg-white/70 backdrop-blur-xl border border-[#e0d5c8] shadow-[0_8px_32px_0_rgba(0,0,0,0.06)] rounded-3xl p-4 transition-all duration-500 hover:border-[#d0c0b0]">
@@ -139,7 +126,6 @@ function PrayerTimeline({ flightState, prayerMarkers, currentPrayer, qibla }) {
         Prayer Schedule
       </h3>
 
-      {/* Flight Timer */}
       <div className="flex items-center justify-between mb-4 p-3 bg-[#f5f0eb] rounded-xl border border-[#e0d5c8]">
         <div className="text-center">
           <div className="text-xs text-[#a09080]">Elapsed</div>
@@ -159,7 +145,6 @@ function PrayerTimeline({ flightState, prayerMarkers, currentPrayer, qibla }) {
         </div>
       </div>
 
-      {/* Qibla Direction */}
       {qibla && (
         <div className="flex items-center justify-between mb-4 p-3 bg-[#f5f0eb] rounded-xl border border-[#e0d5c8]">
           <div className="flex items-center gap-3">
@@ -174,18 +159,11 @@ function PrayerTimeline({ flightState, prayerMarkers, currentPrayer, qibla }) {
         </div>
       )}
 
-      {/* Timeline */}
       <div className="relative pl-6">
         <div className="absolute left-[8px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-[#c4a882]/60 via-[#b89978]/60 to-[#c4a882]/60 shadow-[0_0_8px_rgba(196,168,130,0.3)]" />
-        {[...prayerMarkers]
-          .filter(m => m.status !== 'not-during-flight')
-          .sort((a, b) => a.elapsedAtStart - b.elapsedAtStart)
-          .concat(prayerMarkers.filter(m => m.status === 'not-during-flight'))
-          .map((marker) => {
-          const isCurrent = currentPrayer?.key === marker.key;
-          const isPast = currentPrayer && prayerMarkers.indexOf(marker) < prayerMarkers.indexOf(
-            prayerMarkers.find(m => m.key === currentPrayer.key)
-          );
+        {activePrayers.map((marker, idx) => {
+          const isCurrent = currentPrayerIndex === idx;
+          const isPast = currentPrayerIndex !== null && idx < currentPrayerIndex;
 
           return (
             <div
@@ -208,61 +186,32 @@ function PrayerTimeline({ flightState, prayerMarkers, currentPrayer, qibla }) {
                     {marker.label}
                   </span>
                   <div className="text-xs text-[#a09080]">
-                    {marker.status === 'not-during-flight' ? (
-                      <span className="text-[#a09080]">Not during flight</span>
-                    ) : (
-                      <>
-                        ~{Math.floor(marker.elapsedAtStart / 60)}h {Math.round(marker.elapsedAtStart % 60)}m into flight
-                      </>
-                    )}
+                    ~{Math.floor(marker.elapsedAtStart / 60)}h {Math.round(marker.elapsedAtStart % 60)}m into flight
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <div className="text-right">
-                  {marker.status !== 'not-during-flight' ? (
-                    <>
-                      <div className="text-xs text-[#a09080]">
-                        {Math.floor(marker.windowMinutes / 60)}h {Math.round(marker.windowMinutes % 60)}m
-                      </div>
-                      {marker.qibla && (
-                        <div className="text-xs text-[#c4a882]">Qibla Direction: {marker.qibla.bearingText}</div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="text-xs text-[#a09080]">Outside flight</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-right">
+                    <div className="text-xs text-[#a09080]">Local: {marker.localTime}</div>
+                    <div className="text-xs text-[#c4a882]">Qibla Direction: {marker.qibla?.bearingText || '--'}</div>
+                  </div>
+                  {isCurrent && (
+                    <span className="px-2 py-0.5 bg-gradient-to-r from-[#c4a882] to-[#b89978] text-white text-xs rounded-full font-bold shadow-lg shadow-[#c4a882]/30">
+                      NOW
+                    </span>
                   )}
                 </div>
-                {isCurrent && (
-                  <span className="px-2 py-0.5 bg-gradient-to-r from-[#c4a882] to-[#b89978] text-white text-xs rounded-full font-bold shadow-lg shadow-[#c4a882]/30">
-                    NOW
-                  </span>
-                )}
               </div>
             </div>
           );
         })}
+        {activePrayers.length === 0 && (
+          <div className="text-center py-4 text-[#a09080] text-sm">
+            No prayers during this flight.
+          </div>
+        )}
       </div>
-
-      {/* Current Prayer Countdown */}
-      {currentPrayer && (
-        <div className="mt-4 p-3 bg-[#f5f0eb] rounded-xl border border-[#e0d5c8]">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm text-[#8a7a6a]">
-              {currentPrayer.label} window closes in:
-            </div>
-            <CountdownTimer seconds={currentPrayer.timeUntilNext || 0} />
-          </div>
-          <div className="text-xs text-[#a09080]">
-            Started: {currentPrayer.localTime} | Local at plane: {localTime}
-          </div>
-          {qibla && (
-            <div className="text-xs text-[#c4a882] mt-1">
-              Face Qibla: {qibla.bearingText}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -369,6 +318,7 @@ export default function FlightTracker() {
   const [prayerMarkers, setPrayerMarkers] = useState([]);
   const [flightSchedule, setFlightSchedule] = useState(null);
   const [currentPrayer, setCurrentPrayer] = useState(null);
+  const [currentPrayerIndex, setCurrentPrayerIndex] = useState(null);
   const [qibla, setQibla] = useState(null);
   const [error, setError] = useState('');
   const [isRunning, setIsRunning] = useState(false);
@@ -394,7 +344,6 @@ export default function FlightTracker() {
       return;
     }
 
-    // Pre-compute the full flight schedule
     const depAirport = newSession.route.departure;
     const pathPoints = newSession.getState().pathPoints;
     const schedule = precomputeFlightSchedule(
@@ -412,7 +361,6 @@ export default function FlightTracker() {
     setElapsed(0);
     setSpeed(1);
 
-    // Initial state (before takeoff, no tick running)
     const initial = getFlightStateAtElapsed(
       schedule.schedule, 0, durationMinutes, pathPoints,
       depCode, arrCode, newSession.route.departure, newSession.route.arrival
@@ -423,7 +371,6 @@ export default function FlightTracker() {
     setShowOverview(true);
   }, [depCode, arrCode, depTime, durationH, durationM, depDate, nextDay]);
 
-  // Start the simulation tick (from the overview state)
   const beginSimulation = useCallback(() => {
     setIsRunning(true);
   }, []);
@@ -445,12 +392,10 @@ export default function FlightTracker() {
     if (!isRunning || !flightSchedule || !session) return;
 
     const tick = () => {
-      // Advance elapsed time
       setElapsed(prev => {
         const next = prev + 1;
         const duration = flightSchedule.durationMinutes;
 
-        // Get state from pre-computed schedule
         const state = getFlightStateAtElapsed(
           flightSchedule.schedule, next, duration,
           session.getState().pathPoints,
@@ -458,7 +403,6 @@ export default function FlightTracker() {
           session.route.departure, session.route.arrival
         );
 
-        // Update session state for tick
         if (session.state() !== 'landed') {
           session.tick();
         }
@@ -467,7 +411,25 @@ export default function FlightTracker() {
         setCurrentPrayer(state.currentPrayer);
         setQibla(state.qibla);
 
-        // Auto-stop when landed
+        // Determine current prayer index from elapsed time
+        const activePrayers = prayerMarkers.filter(m => m.status !== 'not-during-flight');
+        let foundIdx = null;
+        for (let i = 0; i < activePrayers.length; i++) {
+          const marker = activePrayers[i];
+          const nextMarker = activePrayers[i + 1];
+          if (elapsed >= marker.elapsedAtStart) {
+            if (!nextMarker || elapsed < nextMarker.elapsedAtStart) {
+              foundIdx = i;
+              break;
+            }
+          }
+        }
+        // If past the last prayer, still show it as current
+        if (foundIdx === null && activePrayers.length > 0 && next >= duration) {
+          foundIdx = activePrayers.length - 1;
+        }
+        setCurrentPrayerIndex(foundIdx);
+
         if (next >= duration) {
           stopSimulation();
           return duration;
@@ -483,9 +445,8 @@ export default function FlightTracker() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isRunning, flightSchedule, session, depCode, arrCode, speed, stopSimulation]);
+  }, [isRunning, flightSchedule, session, depCode, arrCode, speed, stopSimulation, prayerMarkers, elapsed]);
 
-  // Build map bounds
   const getMapBounds = () => {
     if (!flightState) return null;
     const points = flightState.pathPoints || [];
@@ -691,7 +652,6 @@ export default function FlightTracker() {
                   />
                   <FitBounds bounds={mapBounds} />
 
-                  {/* Flight path */}
                   {flightState.pathPoints && flightState.pathPoints.length > 0 && (
                     <Polyline
                       positions={flightState.pathPoints.map(p => [p.lat, p.lng])}
@@ -699,12 +659,11 @@ export default function FlightTracker() {
                     />
                   )}
 
-                  {/* Prayer markers (visible before takeoff!) */}
                   {prayerMarkers.filter(m => m.status !== 'not-during-flight').map((marker) => (
                     <Marker
                       key={marker.key}
                       position={[marker.position.lat, marker.position.lng]}
-                      icon={createPrayerIcon(marker.color, currentPrayer?.key === marker.key)}
+                      icon={createPrayerIcon(marker.color, false)}
                     >
                       <Popup>
                         <div className="text-sm">
@@ -712,20 +671,14 @@ export default function FlightTracker() {
                           <br />
                           ~{Math.floor(marker.elapsedAtStart / 60)}h {Math.round(marker.elapsedAtStart % 60)}m into flight
                           <br />
-                          Window: {Math.floor(marker.windowMinutes / 60)}h {Math.round(marker.windowMinutes % 60)}m
-                          <br />
                           Qibla Direction: {marker.qibla?.bearingText || '--'}
                           <br />
                           Local at prayer: {marker.localTime}
-                          {currentPrayer?.key === marker.key && (
-                            <><br /><span className="text-[#c4a882] font-bold">Active Now</span></>
-                          )}
                         </div>
                       </Popup>
                     </Marker>
                   ))}
 
-                  {/* Qibla line */}
                   {flightState.position && flightState.state === 'in-flight' && qibla && (
                     <QiblaLine
                       fromLat={flightState.position.lat}
@@ -734,7 +687,6 @@ export default function FlightTracker() {
                     />
                   )}
 
-                  {/* Kaaba marker */}
                   <Marker position={[21.4225, 39.8262]} icon={kaabaIcon}>
                     <Popup>
                       <div className="text-sm">
@@ -745,7 +697,6 @@ export default function FlightTracker() {
                     </Popup>
                   </Marker>
 
-                  {/* Departure */}
                   {flightState.departure && (
                     <Marker position={[flightState.departure.lat, flightState.departure.lng]} icon={airportIcon}>
                       <Popup>
@@ -756,7 +707,6 @@ export default function FlightTracker() {
                     </Marker>
                   )}
 
-                  {/* Arrival */}
                   {flightState.arrival && (
                     <Marker position={[flightState.arrival.lat, flightState.arrival.lng]} icon={airportIcon}>
                       <Popup>
@@ -767,7 +717,6 @@ export default function FlightTracker() {
                     </Marker>
                   )}
 
-                  {/* Plane */}
                   {flightState.position && flightState.state === 'in-flight' && (
                     <Marker position={[flightState.position.lat, flightState.position.lng]} icon={planeIcon}>
                       <Popup>
@@ -799,12 +748,24 @@ export default function FlightTracker() {
                   <span>Fajr</span>
                 </div>
                 <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 bg-[#f97316] rounded-full border border-white shadow-sm" />
+                  <span>Sunrise</span>
+                </div>
+                <div className="flex items-center gap-1">
                   <div className="w-2 h-2 bg-[#f59e0b] rounded-full border border-white shadow-sm" />
-                  <span>Dhuhr/Asr</span>
+                  <span>Dhuhr</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 bg-[#8b5cf6] rounded-full border border-white shadow-sm" />
+                  <span>Asr</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="w-2 h-2 bg-[#ef4444] rounded-full border border-white shadow-sm" />
-                  <span>Maghrib/Isha</span>
+                  <span>Maghrib</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 bg-[#6366f1] rounded-full border border-white shadow-sm" />
+                  <span>Isha</span>
                 </div>
               </div>
             </div>
@@ -815,14 +776,13 @@ export default function FlightTracker() {
               <PrayerTimeline
                 flightState={flightState}
                 prayerMarkers={prayerMarkers}
-                currentPrayer={currentPrayer}
+                currentPrayerIndex={currentPrayerIndex}
                 qibla={qibla}
               />
             </div>
           </div>
         )}
 
-        {/* Empty state */}
         {!flightState && !error && (
           <div className="text-center py-16">
             <div className="text-5xl mb-4 text-[#c4a882] font-serif">M</div>

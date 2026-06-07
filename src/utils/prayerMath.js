@@ -484,79 +484,69 @@ export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, duration
     });
   }
 
-  // Build combined prayer slots with their elapsed times and positions
-  // Scan the schedule to find where each prayer starts and ends
-  const prayerOrder = [
-    { key: 'fajr', label: 'Fajr', short: 'F', color: '#3b82f6' },
-    { key: 'dhuhrAsr', label: 'Dhuhr/Asr', short: 'D/A', color: '#f59e0b' },
-    { key: 'maghribIsha', label: 'Maghrib/Isha', short: 'M/I', color: '#ef4444' },
+  // Build individual prayer time markers — scan the schedule to find when each
+  // individual prayer (Fajr, Sunrise, Dhuhr, Asr, Maghrib, Isha) occurs
+  // in flight-elapsed time. Each prayer is a single event (when it enters),
+  // not a window. Sunrise is included explicitly for verification.
+  const individualPrayers = [
+    { key: 'fajr',     label: 'Fajr',     color: '#3b82f6' },
+    { key: 'sunrise',  label: 'Sunrise',  color: '#f97316' },
+    { key: 'dhuhr',    label: 'Dhuhr',    color: '#f59e0b' },
+    { key: 'asr',      label: 'Asr',      color: '#8b5cf6' },
+    { key: 'maghrib',  label: 'Maghrib',  color: '#ef4444' },
+    { key: 'isha',     label: 'Isha',     color: '#6366f1' },
   ];
 
-  for (const p of prayerOrder) {
-    let startEntry = null;
-    let endEntry = null;
-    let qiblaAtMid = null;
+  for (const p of individualPrayers) {
+    // Find the closest schedule entry where the plane's local time has
+    // reached ≥ this prayer's time, but hasn't yet reached the next prayer.
+    let closestEntry = null;
+    let closestDiff = Infinity;
 
     for (const entry of schedule) {
-      if (entry.activeSlot && entry.activeSlot.key === p.key) {
-        if (!startEntry) {
-          startEntry = entry;
-        }
-        endEntry = entry;
-        // Qibla at midpoint
-        if (!qiblaAtMid) {
-          qiblaAtMid = entry.qibla;
-        }
+      const pt = entry.prayerTimes;
+      const prayerTime = pt[p.key];
+      if (prayerTime == null) continue;
+
+      // How close is the plane's local time to this prayer time?
+      let diff = entry.localHours - prayerTime;
+      // Handle wrap-around: if prayer is early morning (e.g., Fajr 04:30)
+      // and local time is late night (e.g., 23:00), diff should be small
+      // meaning the prayer already passed or is approaching
+      if (diff < -12) diff += 24;
+      if (diff > 12) diff -= 24;
+
+      const absDiff = Math.abs(diff);
+      // We want the entry closest to the prayer time (within 30 minutes)
+      if (absDiff < 0.5 && absDiff < closestDiff) {
+        closestDiff = absDiff;
+        closestEntry = entry;
       }
     }
 
-    if (startEntry && endEntry) {
-      const elapsedAtStart = startEntry.elapsedMin;
-      const elapsedAtEnd = endEntry.elapsedMin + scanInterval; // +scanInterval because the last entry is still inside
-
-      // Use LOCAL prayer time duration — not flight elapsed minutes — for the window
-      const pt = startEntry.prayerTimes;
-      let windowMinutes = 0;
-      if (p.key === 'fajr') {
-        windowMinutes = getSlotDurationMinutes(pt.fajr, pt.sunrise);
-      } else if (p.key === 'dhuhrAsr') {
-        windowMinutes = getSlotDurationMinutes(pt.dhuhr, pt.maghrib);
-      } else if (p.key === 'maghribIsha') {
-        windowMinutes = getSlotDurationMinutes(pt.maghrib, pt.midnight);
-      }
-
-      // Position at start of prayer
+    if (closestEntry) {
+      const elapsedAtStart = closestEntry.elapsedMin;
       const startIdx = Math.min(Math.floor((elapsedAtStart / durationMinutes) * (pathPoints.length - 1)), pathPoints.length - 1);
       const startPos = pathPoints[startIdx];
 
       prayerMarkers.push({
         key: p.key,
         label: p.label,
-        short: p.short,
+        short: p.label.charAt(0),
         color: p.color,
         elapsedAtStart,
-        elapsedAtEnd,
-        windowMinutes,
-        position: startPos,
-        localTime: startEntry.localTimeStr,
-        qibla: qiblaAtMid || startEntry.qibla,
-        status: 'during-flight',
-      });
-    } else {
-      prayerMarkers.push({
-        key: p.key,
-        label: p.label,
-        short: p.short,
-        color: p.color,
-        elapsedAtStart: 0,
-        elapsedAtEnd: 0,
+        elapsedAtEnd: elapsedAtStart,
         windowMinutes: 0,
-        position: null,
-        qibla: null,
-        status: 'not-during-flight',
+        position: startPos,
+        localTime: hoursToTimeString(closestEntry.prayerTimes[p.key]),
+        qibla: closestEntry.qibla,
+        status: 'during-flight',
       });
     }
   }
+
+  // Sort prayer markers by elapsed time (chronological order during flight)
+  prayerMarkers.sort((a, b) => a.elapsedAtStart - b.elapsedAtStart);
 
   return {
     schedule,
