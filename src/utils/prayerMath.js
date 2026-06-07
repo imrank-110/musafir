@@ -141,8 +141,8 @@ export function calculatePrayerTimes(date, lat, lng, timezone, altitudeMeters = 
   const a = Math.floor((14 - month) / 12);
   const y = year + 4800 - a;
   const m = month + 12 * a - 3;
-  let jd = day + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - Math.floor(y / 79) - 32083;
-  jd = jd - Math.floor((y - 1) / 100) + Math.floor((y - 1) / 400) + 2;
+  // Standard Meeus Gregorian Julian Day formula
+  let jd = day + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) - 32045;
 
   const dhuhrBase = dhuhrMinutes(jd, lng, timezone);
   const dhuhr = fixHour(dhuhrBase);
@@ -484,30 +484,74 @@ export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, duration
     });
   }
 
-  // Build combined prayer slot markers — scan the schedule to find when each
-  // combined slot (Fajr, Dhuhr/Asr, Maghrib/Isha) first becomes active,
-  // plus Sunrise as a separate entry so users know the Fajr window.
-  // Uses the activeSlot detection (which correctly handles wrap-around via isInSlot()).
-  const slotDefs = [
-    { key: 'fajr',        label: 'Fajr',        color: '#3b82f6', slotKey: 'fajr' },
-    { key: 'sunrise',     label: 'Sunrise',     color: '#f97316', slotKey: null },
-    { key: 'dhuhrAsr',    label: 'Dhuhr/Asr',   color: '#f59e0b', slotKey: 'dhuhrAsr' },
-    { key: 'maghribIsha', label: 'Maghrib/Isha', color: '#ef4444', slotKey: 'maghribIsha' },
-  ];
+  // Walk through the daily cycle in fixed order to build prayer markers.
+  // The cycle is always: Fajr → Sunrise → Dhuhr/Asr → Maghrib/Isha → (back to Fajr)
+  // We start from whichever slot is active at the departure time, then walk forward
+  // through the cycle finding when each subsequent slot first becomes active.
 
-  for (const def of slotDefs) {
+  // Determine what's active at departure (first schedule entry)
+  const depEntry = schedule[0];
+  let cycleSlots = ['fajr', 'sunrise', 'dhuhrAsr', 'maghribIsha'];
+
+  // Find index to start from: the slot active at departure, or the next slot after it
+  let startIdx = 0;
+  let depSlotKey = null;
+  if (depEntry && depEntry.activeSlot) {
+    depSlotKey = depEntry.activeSlot.key;
+  }
+
+  // Map combined slot keys to cycle slot names
+  const slotToCycle = {
+    'fajr': 'fajr',
+    'dhuhrAsr': 'dhuhrAsr',
+    'maghribIsha': 'maghribIsha',
+  };
+
+  if (depSlotKey && slotToCycle[depSlotKey]) {
+    startIdx = cycleSlots.indexOf(slotToCycle[depSlotKey]);
+  } else {
+    // If no slot is active at departure, check if it's between Fajr and sunrise
+    // (i.e., after Fajr ends but before Sunrise). In that case start with Sunrise.
+    if (depEntry) {
+      const pt = depEntry.prayerTimes;
+      const locH = depEntry.localHours;
+      // Is it between Sunrise and Dhuhr? Then nothing is active, start from Dhuhr/Asr
+      if (locH >= pt.sunrise && locH < pt.dhuhr) {
+        startIdx = 2; // skip to dhuhrAsr
+      } else if (locH >= pt.midnight && locH < pt.fajr) {
+        startIdx = 0; // wait for Fajr
+      }
+    }
+  }
+
+  // Define the display order: for each cycle slot, we record its label, color,
+  // and which prayerTimes field to use for the local time display.
+  const displayMap = {
+    'fajr':     { label: 'Fajr',        color: '#3b82f6', timeKey: 'fajr' },
+    'sunrise':  { label: 'Sunrise',     color: '#f97316', timeKey: 'sunrise' },
+    'dhuhrAsr': { label: 'Dhuhr/Asr',   color: '#f59e0b', timeKey: 'dhuhr' },
+    'maghribIsha': { label: 'Maghrib/Isha', color: '#ef4444', timeKey: 'maghrib' },
+  };
+
+  // Walk forward from startIdx through the cycle, wrapping around
+  for (let c = 0; c < cycleSlots.length; c++) {
+    const cycleIdx = (startIdx + c) % cycleSlots.length;
+    const slotName = cycleSlots[cycleIdx];
+    const display = displayMap[slotName];
+
     let foundEntry = null;
 
     for (const entry of schedule) {
-      if (def.slotKey === null) {
-        // Sunrise: first entry where localHours >= prayerTimes.sunrise
-        if (entry.localHours >= entry.prayerTimes.sunrise) {
+      if (slotName === 'sunrise') {
+        // Sunrise: first entry where localTime is >= sunrise AND localTime < dhuhr
+        // (must be after actual sunrise, not just local hours >= sunrise)
+        if (entry.localHours >= entry.prayerTimes.sunrise && entry.localHours < entry.prayerTimes.dhuhr) {
           foundEntry = entry;
           break;
         }
       } else {
         // Combined slot: first entry where activeSlot matches
-        if (entry.activeSlot && entry.activeSlot.key === def.slotKey) {
+        if (entry.activeSlot && entry.activeSlot.key === slotName) {
           foundEntry = entry;
           break;
         }
@@ -516,24 +560,21 @@ export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, duration
 
     if (foundEntry) {
       const elapsedAtStart = foundEntry.elapsedMin;
-      const startIdx = Math.min(Math.floor((elapsedAtStart / durationMinutes) * (pathPoints.length - 1)), pathPoints.length - 1);
-      const startPos = pathPoints[startIdx];
+      const startPosIdx = Math.min(Math.floor((elapsedAtStart / durationMinutes) * (pathPoints.length - 1)), pathPoints.length - 1);
+      const startPos = pathPoints[startPosIdx];
 
       prayerMarkers.push({
-        key: def.key,
-        label: def.label,
-        color: def.color,
+        key: slotName,
+        label: display.label,
+        color: display.color,
         elapsedAtStart,
         position: startPos,
-        localTime: hoursToTimeString(foundEntry.prayerTimes[def.key === 'sunrise' ? 'sunrise' : def.slotKey === 'fajr' ? 'fajr' : def.slotKey === 'dhuhrAsr' ? 'dhuhr' : 'maghrib']),
+        localTime: hoursToTimeString(foundEntry.prayerTimes[display.timeKey]),
         qibla: foundEntry.qibla,
         status: 'during-flight',
       });
     }
   }
-
-  // Sort prayer markers by elapsed time (chronological order during flight)
-  prayerMarkers.sort((a, b) => a.elapsedAtStart - b.elapsedAtStart);
 
   return {
     schedule,
