@@ -35,6 +35,31 @@
   /* Shadows */
   --shadow-card: 0 12px 40px rgba(26,21,16,0.09);
   --shadow-btn:  0 4px 18px rgba(45,90,78,0.28);
+
+  /* ── Legacy compatibility tokens (components use these) ── */
+  --bg:             #fafafa;
+  --bg-card:        #ffffff;
+  --bg-secondary:   var(--color-sand-dark);
+  --text-primary:   var(--color-ink);
+  --text-secondary: var(--color-ink-soft);
+  --text-tertiary:  var(--color-muted);
+  --border:         var(--color-border);
+  --border-light:   rgba(184,147,58,0.08);
+  --accent:         var(--color-gold);
+  --accent-hover:   #a07608;
+  --accent-light:   rgba(184,134,11,0.08);
+  --accent-muted:   rgba(184,134,11,0.5);
+  --danger:         #dc2626;
+  --success:        #16a34a;
+  --shadow-sm:      0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md:      0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-lg:      0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-xl:      0 10px 15px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+  --shadow-popup:   0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 4px 10px -5px rgba(0, 0, 0, 0.04);
+  --radius-sm:      8px;
+  --radius-md:      12px;
+  --radius-lg:      16px;
+  --font-sans:      'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 }
 
 /* ── Google Fonts ── */
@@ -88,6 +113,41 @@ body {
 .animate-fade-up-3      { animation: fadeUp 0.7s 0.36s ease both; }
 .animate-float-card     { animation: floatCard 4s ease-in-out infinite; }
 .animate-pulse-dot      { animation: pulse-dot 2s infinite; }
+.animate-slide-up       { animation: slideUp 0.3s ease-out; }
+
+/* ── Legacy animation classes (components use these) ── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: 0.85; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.fade-in {
+  animation: fadeIn 200ms ease-out;
+}
+
+.slide-up {
+  animation: slideUp 250ms ease-out;
+}
+
+.scale-in {
+  animation: scaleIn 200ms ease-out;
+}
 
 /* ── Scroll reveal (JS adds .revealed) ── */
 .reveal {
