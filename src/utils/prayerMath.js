@@ -413,7 +413,7 @@ function getFlightMetrics(progress) {
  * @param {number} scanInterval - Minutes between each scan point (default: 2)
  * @returns {Object} { schedule, prayerMarkers }
  */
-export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, durationMinutes, depDate, scanInterval = 2) {
+export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, durationMinutes, depDate, arrTz, scanInterval = 2) {
   // Parse departure time
   const [depH, depM] = depTimeStr.split(':').map(Number);
   const depLocalMinutes = depH * 60 + depM;
@@ -440,8 +440,11 @@ export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, duration
     const utcMin = depUtcMinutes + elapsedMin;
     const utcHours = (utcMin / 60) % 24;
 
-    // Local time at this position
-    const posTz = getTimezoneFromLng(pos.lng);
+    // Interpolate timezone along the flight path (smooth transition
+    // from departure to arrival timezone). This avoids issues with
+    // longitude-based timezone (e.g., IAH at -95° → UTC-6 instead of
+    // actual UTC-5 CDT; LHR at 0° → UTC+0 instead of UTC+1 BST).
+    const posTz = depTz + (arrTz - depTz) * progress;
     let localHours = (utcHours + posTz + 24) % 24;
 
     // Build a Date for this position's local time
@@ -456,7 +459,7 @@ export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, duration
     // Flight metrics
     const { altitude, groundSpeed } = getFlightMetrics(progress);
 
-    // Calculate prayer times at this position
+    // Calculate prayer times at this position using the interpolated timezone
     const prayerTimes = calculatePrayerTimes(localDate, pos.lat, pos.lng, posTz, altitude);
 
     // Qibla at this position

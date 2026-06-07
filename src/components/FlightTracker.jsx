@@ -345,13 +345,15 @@ export default function FlightTracker() {
     }
 
     const depAirport = newSession.route.departure;
+    const arrAirport = newSession.route.arrival;
     const pathPoints = newSession.getState().pathPoints;
     const schedule = precomputeFlightSchedule(
       pathPoints,
       depTime,
       depAirport.tz,
       durationMinutes,
-      new Date(depDate)
+      new Date(depDate),
+      arrAirport.tz
     );
 
     setError('');
