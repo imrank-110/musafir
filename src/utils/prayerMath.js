@@ -7,7 +7,8 @@
  *   Maghrib: 4.5° below horizon
  *   Isha:   14.0° below horizon
  * 
- * Includes altitude correction for high-altitude flight and Qibla direction.
+ * Includes altitude correction for high-altitude flight, Qibla direction,
+ * and UTC-based flight prayer scheduling.
  */
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -51,7 +52,6 @@ function fixAngle(a) {
 }
 
 function dhuhrMinutes(julianDay, longitude, timezone) {
-  // Equation of time
   const n = julianDay - 2451545.0;
   let g = fixAngle(357.529 + 0.98560028 * n);
   let q = fixAngle(280.459 + 0.98564736 * n);
@@ -74,10 +74,6 @@ function sunDeclination(julianDay) {
 }
 
 // ─── Altitude Correction ─────────────────────────────────────────────────────
-// At altitude, the visible horizon dips, shifting prayer times.
-// The dip angle (in degrees) = acos(R / (R + h)) where R = Earth radius, h = altitude.
-// This effectively reduces the twilight angle for Fajr (makes it earlier)
-// and increases it for Maghrib (makes it later).
 
 function altitudeDipAngle(altitudeMeters) {
   if (!altitudeMeters || altitudeMeters <= 0) return 0;
@@ -93,17 +89,14 @@ function correctedAngle(baseAngle, altitudeMeters, isFajr) {
   return baseAngle + dip;
 }
 
+// ─── Timezone from Longitude ─────────────────────────────────────────────────
+
+function getTimezoneFromLng(lng) {
+  return Math.round(lng / 15);
+}
+
 // ─── Qibla Direction ─────────────────────────────────────────────────────────
 
-/**
- * Calculate the Qibla direction (bearing to Kaaba) from a given location.
- * 
- * @param {number} lat - Current latitude in degrees
- * @param {number} lng - Current longitude in degrees
- * @returns {Object} { bearing: number (degrees from true north), 
- *                     bearingText: string (e.g., "47° NE"),
- *                     compassDirection: string (e.g., "NE") }
- */
 export function calculateQiblaDirection(lat, lng) {
   const φ1 = lat * DEG;
   const φ2 = KAABA_LAT * DEG;
@@ -111,12 +104,10 @@ export function calculateQiblaDirection(lat, lng) {
   const λ2 = KAABA_LNG * DEG;
   const Δλ = λ2 - λ1;
 
-  // Initial bearing formula
   const y = Math.sin(Δλ) * Math.cos(φ2);
   const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
   let bearing = (atan2(y, x) + 360) % 360;
 
-  // Compass direction text
   const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
   const idx = Math.round(bearing / 45) % 8;
   const compassDirection = directions[idx];
@@ -130,9 +121,6 @@ export function calculateQiblaDirection(lat, lng) {
   };
 }
 
-/**
- * Calculate distance (km) from current position to Kaaba.
- */
 export function distanceToKaaba(lat, lng) {
   const φ1 = lat * DEG;
   const φ2 = KAABA_LAT * DEG;
@@ -145,23 +133,11 @@ export function distanceToKaaba(lat, lng) {
 
 // ─── Main Prayer Time Calculator ─────────────────────────────────────────────
 
-/**
- * Calculate prayer times for a given date, location, and altitude.
- * 
- * @param {Date} date - JavaScript Date object
- * @param {number} lat - Latitude in degrees
- * @param {number} lng - Longitude in degrees
- * @param {number} timezone - Timezone offset from UTC (e.g., -5 for EST)
- * @param {number} altitudeMeters - Altitude in meters (0 for ground)
- * @returns {Object} { fajr, sunrise, dhuhr, asr, maghrib, isha, midnight }
- *   All times are in hours (0-24) local time.
- */
 export function calculatePrayerTimes(date, lat, lng, timezone, altitudeMeters = 0) {
   const year = date.getFullYear();
   const month = date.getMonth() + 1;
   const day = date.getDate();
 
-  // Julian Day
   const a = Math.floor((14 - month) / 12);
   const y = year + 4800 - a;
   const m = month + 12 * a - 3;
@@ -172,7 +148,6 @@ export function calculatePrayerTimes(date, lat, lng, timezone, altitudeMeters = 
   const dhuhr = fixHour(dhuhrBase);
 
   const dec = sunDeclination(jd);
-  const noon = dhuhrBase - 12;
 
   function hourAngle(angle) {
     const numerator = sin(angle) - sin(lat) * sin(dec);
@@ -183,28 +158,23 @@ export function calculatePrayerTimes(date, lat, lng, timezone, altitudeMeters = 
     return acos(val) / 15;
   }
 
-  // Sunrise / Sunset
   const sunriseAngle = -0.833 - altitudeDipAngle(altitudeMeters);
   const sunriseHA = hourAngle(sunriseAngle);
   const sunrise = fixHour(dhuhrBase - sunriseHA);
   const sunset = fixHour(dhuhrBase + sunriseHA);
 
-  // Fajr (with altitude correction)
   const fajrAngle = correctedAngle(TEHRAN_ANGLES.fajr, altitudeMeters, true);
   const fajrHA = hourAngle(-fajrAngle);
   const fajr = fixHour(dhuhrBase - fajrHA);
 
-  // Maghrib (with altitude correction)
   const maghribAngle = correctedAngle(TEHRAN_ANGLES.maghrib, altitudeMeters, false);
   const maghribHA = hourAngle(-maghribAngle);
   const maghrib = fixHour(dhuhrBase + maghribHA);
 
-  // Isha
   const ishaAngle = TEHRAN_ANGLES.isha;
   const ishaHA = hourAngle(-ishaAngle);
   const isha = fixHour(dhuhrBase + ishaHA);
 
-  // Asr (shadow length = 1, standard for Shia)
   const A = Math.abs(lat - dec);
   const arc = atan2(1, tan(A) + 1);
   const asrNumerator = sin(arc) - sin(lat) * sin(dec);
@@ -218,7 +188,6 @@ export function calculatePrayerTimes(date, lat, lng, timezone, altitudeMeters = 
   }
   const asr = fixHour(dhuhrBase + (isNaN(asrHA) ? 0 : asrHA));
 
-  // Midnight
   let midnight = fixHour(sunset + (sunrise + 24 - sunset) / 2);
 
   return {
@@ -232,9 +201,6 @@ export function calculatePrayerTimes(date, lat, lng, timezone, altitudeMeters = 
   };
 }
 
-/**
- * Convert decimal hours to "HH:MM" string.
- */
 export function hoursToTimeString(hours) {
   if (hours == null || isNaN(hours)) return '--:--';
   const h = Math.floor(hours);
@@ -242,9 +208,6 @@ export function hoursToTimeString(hours) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-/**
- * Get the current prayer window info.
- */
 export function getCurrentPrayerInfo(prayerTimes, nowHours) {
   const order = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
   const labels = {
@@ -300,31 +263,14 @@ export function getCurrentPrayerInfo(prayerTimes, nowHours) {
   };
 }
 
-/**
- * Calculate prayer times along a flight path at a given moment.
- */
 export function calculateFlightPrayerTimes(lat, lng, altitudeMeters, date) {
-  const tz = Math.round(lng / 15);
+  const tz = getTimezoneFromLng(lng);
   return calculatePrayerTimes(date, lat, lng, tz, altitudeMeters);
 }
 
-/**
- * Generate a prayer schedule indexed by elapsed flight time (minutes).
- * 
- * @param {number} lat - Current latitude
- * @param {number} lng - Current longitude
- * @param {number} altitudeMeters - Current altitude
- * @param {Date} date - Current date/time
- * @param {number} elapsedMinutes - Minutes into the flight
- * @param {number} durationMinutes - Total flight duration
- * @returns {Object} prayer times with elapsed-minute annotations
- */
 export function generateFlightPrayerSchedule(lat, lng, altitudeMeters, date, elapsedMinutes, durationMinutes) {
   const times = calculateFlightPrayerTimes(lat, lng, altitudeMeters, date);
-  
-  // Calculate Qibla at this position
   const qibla = calculateQiblaDirection(lat, lng);
-  
   return {
     times,
     qibla,
@@ -336,16 +282,8 @@ export function generateFlightPrayerSchedule(lat, lng, altitudeMeters, date, ela
   };
 }
 
-/**
- * Get combined prayer slots for travel (Shia practice).
- * Returns Fajr, Dhuhr/Asr (combined), and Maghrib/Isha (combined).
- * 
- * @param {Object} prayerTimes - Raw prayer times from calculatePrayerTimes()
- * @returns {Array} Combined prayer slots with start/end times and labels
- */
 export function getCombinedPrayerSlots(prayerTimes) {
   if (!prayerTimes) return [];
-
   return [
     {
       key: 'fajr',
@@ -353,7 +291,7 @@ export function getCombinedPrayerSlots(prayerTimes) {
       short: 'F',
       startTime: prayerTimes.fajr,
       endTime: prayerTimes.sunrise,
-      color: '#3b82f6', // blue
+      color: '#3b82f6',
     },
     {
       key: 'dhuhrAsr',
@@ -361,7 +299,7 @@ export function getCombinedPrayerSlots(prayerTimes) {
       short: 'D/A',
       startTime: prayerTimes.dhuhr,
       endTime: prayerTimes.maghrib,
-      color: '#f59e0b', // amber
+      color: '#f59e0b',
     },
     {
       key: 'maghribIsha',
@@ -369,23 +307,13 @@ export function getCombinedPrayerSlots(prayerTimes) {
       short: 'M/I',
       startTime: prayerTimes.maghrib,
       endTime: prayerTimes.midnight,
-      color: '#ef4444', // red
+      color: '#ef4444',
     },
   ];
 }
 
-/**
- * Determine which combined prayer slots fall within a flight window.
- * 
- * @param {Array} slots - Combined prayer slots from getCombinedPrayerSlots()
- * @param {number} takeoffHours - Takeoff time in decimal hours (local)
- * @param {number} landingHours - Landing time in decimal hours (local)
- * @returns {Array} Slots annotated with flight status
- */
 export function getPrayersDuringFlight(slots, takeoffHours, landingHours) {
   return slots.map(slot => {
-    const startInFlight = slot.startTime >= takeoffHours && slot.startTime <= landingHours;
-    const endInFlight = slot.endTime >= takeoffHours && slot.endTime <= landingHours;
     const overlaps = slot.startTime < landingHours && slot.endTime > takeoffHours;
 
     let status;
@@ -406,7 +334,6 @@ export function getPrayersDuringFlight(slots, takeoffHours, landingHours) {
       }
     }
 
-    // Calculate elapsed flight time when this prayer occurs
     const elapsedAtStart = Math.max(0, (effectiveStart - takeoffHours) * 60);
     const elapsedAtEnd = Math.max(0, (effectiveEnd - takeoffHours) * 60);
     const windowMinutes = Math.max(0, effectiveEnd - effectiveStart) * 60;
@@ -421,4 +348,235 @@ export function getPrayersDuringFlight(slots, takeoffHours, landingHours) {
       windowMinutes,
     };
   });
+}
+
+// ─── UTC-Based Flight Prayer Scheduling ──────────────────────────────────────
+
+/**
+ * Get the altitude and ground speed at a given flight progress (0..1).
+ */
+function getFlightMetrics(progress) {
+  let altitude = 0;
+  let groundSpeed = 0;
+
+  if (progress < 0.05) {
+    altitude = Math.min(10668, progress / 0.05 * 10668);
+    groundSpeed = 250 + (progress / 0.05) * 600;
+  } else if (progress > 0.85) {
+    const descent = (progress - 0.85) / 0.15;
+    altitude = Math.max(0, 10668 * (1 - descent));
+    groundSpeed = Math.max(250, 850 * (1 - descent * 0.7));
+  } else {
+    altitude = 10668;
+    groundSpeed = 850;
+  }
+
+  return { altitude, groundSpeed };
+}
+
+/**
+ * Pre-compute the full flight prayer schedule using UTC-based time.
+ * 
+ * This is the core fix: instead of using the computer's local clock, we
+ * simulate the flight's own clock starting from the departure UTC time.
+ * At each position along the path, we calculate the local time using
+ * the timezone of that position, then compute prayer times for that
+ * exact location and time.
+ * 
+ * @param {Array} pathPoints - Array of {lat, lng} along the Great Circle
+ * @param {string} depTimeStr - Departure local time "HH:MM"
+ * @param {number} depTz - Departure airport timezone offset (e.g., 3 for DOH)
+ * @param {number} durationMinutes - Total flight duration
+ * @param {Date} depDate - Departure date
+ * @param {number} scanInterval - Minutes between each scan point (default: 2)
+ * @returns {Object} { schedule, prayerMarkers }
+ */
+export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, durationMinutes, depDate, scanInterval = 2) {
+  // Parse departure time
+  const [depH, depM] = depTimeStr.split(':').map(Number);
+  const depLocalMinutes = depH * 60 + depM;
+
+  // Departure UTC in minutes
+  const depUtcMinutes = depLocalMinutes - depTz * 60;
+
+  const schedule = [];
+  const prayerMarkers = [];
+  const combinedPrayerSlots = [];
+
+  // Track active prayer for combining slots
+  let currentSlot = null;
+
+  // Scan the flight path
+  const numScans = Math.ceil(durationMinutes / scanInterval);
+
+  for (let i = 0; i <= numScans && i * scanInterval <= durationMinutes; i++) {
+    const elapsedMin = i * scanInterval;
+    const progress = durationMinutes > 0 ? elapsedMin / durationMinutes : 0;
+
+    // Get position from path
+    const idx = Math.min(Math.floor(progress * (pathPoints.length - 1)), pathPoints.length - 1);
+    const pos = pathPoints[idx];
+    if (!pos) continue;
+
+    // Current UTC time at this elapsed minute
+    const utcMin = depUtcMinutes + elapsedMin;
+    const utcHours = (utcMin / 60) % 24;
+
+    // Local time at this position
+    const posTz = getTimezoneFromLng(pos.lng);
+    let localHours = (utcHours + posTz + 24) % 24;
+
+    // Build a Date for this position's local time
+    const localDate = new Date(depDate);
+    const totalLocalMinutes = localHours * 60;
+    localDate.setHours(Math.floor(totalLocalMinutes / 60), Math.round(totalLocalMinutes % 60), 0, 0);
+    // Add days if needed
+    if (depUtcMinutes + elapsedMin >= 1440) {
+      localDate.setDate(localDate.getDate() + 1);
+    }
+
+    // Flight metrics
+    const { altitude, groundSpeed } = getFlightMetrics(progress);
+
+    // Calculate prayer times at this position
+    const prayerTimes = calculatePrayerTimes(localDate, pos.lat, pos.lng, posTz, altitude);
+
+    // Qibla at this position
+    const qibla = calculateQiblaDirection(pos.lat, pos.lng);
+
+    // Determine which combined prayer slot is active at this local time
+    const slots = getCombinedPrayerSlots(prayerTimes);
+    const activeSlot = slots.find(s => localHours >= s.startTime && localHours < s.endTime);
+
+    schedule.push({
+      elapsedMin,
+      progress,
+      position: pos,
+      localHours,
+      localTimeStr: hoursToTimeString(localHours),
+      altitude: Math.round(altitude),
+      groundSpeed: Math.round(groundSpeed),
+      prayerTimes,
+      qibla,
+      activeSlot: activeSlot || null,
+    });
+  }
+
+  // Build combined prayer slots with their elapsed times and positions
+  // Scan the schedule to find where each prayer starts and ends
+  const prayerOrder = [
+    { key: 'fajr', label: 'Fajr', short: 'F', color: '#3b82f6' },
+    { key: 'dhuhrAsr', label: 'Dhuhr/Asr', short: 'D/A', color: '#f59e0b' },
+    { key: 'maghribIsha', label: 'Maghrib/Isha', short: 'M/I', color: '#ef4444' },
+  ];
+
+  for (const p of prayerOrder) {
+    let startEntry = null;
+    let endEntry = null;
+    let qiblaAtMid = null;
+
+    for (const entry of schedule) {
+      if (entry.activeSlot && entry.activeSlot.key === p.key) {
+        if (!startEntry) {
+          startEntry = entry;
+        }
+        endEntry = entry;
+        // Qibla at midpoint
+        if (!qiblaAtMid) {
+          qiblaAtMid = entry.qibla;
+        }
+      }
+    }
+
+    if (startEntry && endEntry) {
+      const elapsedAtStart = startEntry.elapsedMin;
+      const elapsedAtEnd = endEntry.elapsedMin + scanInterval; // +scanInterval because the last entry is still inside
+      const windowMinutes = elapsedAtEnd - elapsedAtStart;
+
+      // Position at start of prayer
+      const startIdx = Math.min(Math.floor((elapsedAtStart / durationMinutes) * (pathPoints.length - 1)), pathPoints.length - 1);
+      const startPos = pathPoints[startIdx];
+
+      prayerMarkers.push({
+        key: p.key,
+        label: p.label,
+        short: p.short,
+        color: p.color,
+        elapsedAtStart,
+        elapsedAtEnd,
+        windowMinutes,
+        position: startPos,
+        localTime: startEntry.localTimeStr,
+        qibla: qiblaAtMid || startEntry.qibla,
+        status: 'during-flight',
+      });
+    } else {
+      prayerMarkers.push({
+        key: p.key,
+        label: p.label,
+        short: p.short,
+        color: p.color,
+        elapsedAtStart: 0,
+        elapsedAtEnd: 0,
+        windowMinutes: 0,
+        position: null,
+        qibla: null,
+        status: 'not-during-flight',
+      });
+    }
+  }
+
+  return {
+    schedule,
+    prayerMarkers,
+    durationMinutes,
+    depUtcMinutes,
+  };
+}
+
+/**
+ * Get the current flight state from a pre-computed schedule.
+ */
+export function getFlightStateAtElapsed(schedule, elapsedMinutes, durationMinutes, pathPoints, depCode, arrCode, depInfo, arrInfo) {
+  // Find the closest schedule entry
+  const entry = schedule.reduce((closest, e) => {
+    return Math.abs(e.elapsedMin - elapsedMinutes) < Math.abs(closest.elapsedMin - elapsedMinutes) ? e : closest;
+  }, schedule[0]);
+
+  const progress = durationMinutes > 0 ? elapsedMinutes / durationMinutes : 0;
+
+  // Get position from path
+  const idx = Math.min(Math.floor(progress * (pathPoints.length - 1)), pathPoints.length - 1);
+  const pos = pathPoints[idx] || entry.position;
+
+  let state = 'in-flight';
+  if (elapsedMinutes <= 0) state = 'pre-takeoff';
+  if (elapsedMinutes >= durationMinutes) state = 'landed';
+
+  const isCurrentlyInPrayer = entry && entry.activeSlot;
+
+  return {
+    state,
+    flightCode: `${depCode}${arrCode}`,
+    departure: depInfo,
+    arrival: arrInfo,
+    position: pos,
+    altitude: entry?.altitude || 0,
+    groundSpeed: entry?.groundSpeed || 0,
+    flightProgress: progress,
+    elapsedMinutes,
+    durationMinutes,
+    pathPoints,
+    timestamp: new Date(),
+    localTime: entry?.localTimeStr || '--:--',
+    currentPrayer: isCurrentlyInPrayer ? {
+      label: entry.activeSlot.label,
+      key: entry.activeSlot.key,
+      color: entry.activeSlot.color,
+      localTime: hoursToTimeString(entry.activeSlot.startTime),
+      endTime: hoursToTimeString(entry.activeSlot.endTime),
+      timeUntilNext: Math.max(0, (entry.activeSlot.endTime - entry.localHours) * 3600),
+    } : null,
+    qibla: entry?.qibla || null,
+  };
 }
