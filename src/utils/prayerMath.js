@@ -312,6 +312,28 @@ export function getCombinedPrayerSlots(prayerTimes) {
   ];
 }
 
+/**
+ * Check if a local time falls within a combined prayer slot.
+ * Handles wrap-around: e.g., Maghrib 21:30 → Midnight 01:00 (next day).
+ */
+export function isInSlot(localHours, startTime, endTime) {
+  if (endTime > startTime) {
+    return localHours >= startTime && localHours < endTime;
+  }
+  // Wraps past midnight (e.g., Maghrib 21:30 → Midnight 01:00)
+  return localHours >= startTime || localHours < endTime;
+}
+
+/**
+ * Get the duration of a combined prayer slot in minutes.
+ * Handles wrap-around: e.g., Midnight 01:00 - Maghrib 21:30 = 3.5 hours.
+ */
+export function getSlotDurationMinutes(startTime, endTime) {
+  let diff = endTime - startTime;
+  if (diff < 0) diff += 24;
+  return Math.max(0, diff * 60);
+}
+
 export function getPrayersDuringFlight(slots, takeoffHours, landingHours) {
   return slots.map(slot => {
     const overlaps = slot.startTime < landingHours && slot.endTime > takeoffHours;
@@ -446,7 +468,7 @@ export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, duration
 
     // Determine which combined prayer slot is active at this local time
     const slots = getCombinedPrayerSlots(prayerTimes);
-    const activeSlot = slots.find(s => localHours >= s.startTime && localHours < s.endTime);
+    const activeSlot = slots.find(s => isInSlot(localHours, s.startTime, s.endTime));
 
     schedule.push({
       elapsedMin,
@@ -496,13 +518,12 @@ export function precomputeFlightSchedule(pathPoints, depTimeStr, depTz, duration
       const pt = startEntry.prayerTimes;
       let windowMinutes = 0;
       if (p.key === 'fajr') {
-        windowMinutes = ((pt.sunrise - pt.fajr) * 60);
+        windowMinutes = getSlotDurationMinutes(pt.fajr, pt.sunrise);
       } else if (p.key === 'dhuhrAsr') {
-        windowMinutes = ((pt.maghrib - pt.dhuhr) * 60);
+        windowMinutes = getSlotDurationMinutes(pt.dhuhr, pt.maghrib);
       } else if (p.key === 'maghribIsha') {
-        windowMinutes = ((pt.midnight - pt.maghrib) * 60);
+        windowMinutes = getSlotDurationMinutes(pt.maghrib, pt.midnight);
       }
-      windowMinutes = Math.max(0, windowMinutes);
 
       // Position at start of prayer
       const startIdx = Math.min(Math.floor((elapsedAtStart / durationMinutes) * (pathPoints.length - 1)), pathPoints.length - 1);
@@ -586,7 +607,11 @@ export function getFlightStateAtElapsed(schedule, elapsedMinutes, durationMinute
       color: entry.activeSlot.color,
       localTime: hoursToTimeString(entry.activeSlot.startTime),
       endTime: hoursToTimeString(entry.activeSlot.endTime),
-      timeUntilNext: Math.max(0, (entry.activeSlot.endTime - entry.localHours) * 3600),
+      timeUntilNext: (() => {
+        let diff = entry.activeSlot.endTime - entry.localHours;
+        if (diff < 0) diff += 24;
+        return Math.max(0, diff * 3600);
+      })(),
     } : null,
     qibla: entry?.qibla || null,
   };
