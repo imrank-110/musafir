@@ -1,168 +1,367 @@
-/* ─── Tailwind ─────────────────────────────────────────────────────────────── */
 @import "tailwindcss";
 
-/* ─── Design Tokens ─────────────────────────────────────────────────────────── */
-:root {
-  /* Colors */
-  --bg: #fafafa;
-  --bg-card: #ffffff;
-  --bg-secondary: #f5f5f5;
-  --text-primary: #1a1a1a;
-  --text-secondary: #737373;
-  --text-tertiary: #a3a3a3;
-  --border: #e5e5e5;
-  --border-light: #f0f0f0;
-  --accent: #b8860b;
-  --accent-hover: #a07608;
-  --accent-light: rgba(184, 134, 11, 0.08);
-  --accent-muted: rgba(184, 134, 11, 0.5);
-  --danger: #dc2626;
-  --success: #16a34a;
+/* ─────────────────────────────────────────
+   MUSAFIR — Design System
+   Stack: Tailwind CSS v4 + Custom Properties
+───────────────────────────────────────── */
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-  --shadow-xl: 0 10px 15px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
-  --shadow-popup: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 4px 10px -5px rgba(0, 0, 0, 0.04);
+@theme {
+  /* Fonts */
+  --font-display: "Cormorant Garamond", "Georgia", serif;
+  --font-body: "DM Sans", system-ui, sans-serif;
+
+  /* Brand palette */
+  --color-sand:        #f5f0e8;
+  --color-sand-dark:   #e8dfd0;
+  --color-card:        #faf7f2;
+  --color-ink:         #1a1510;
+  --color-ink-soft:    #3d3428;
+  --color-muted:       #8a7d6a;
+  --color-border:      rgba(184,147,58,0.18);
+
+  --color-gold:        #b8933a;
+  --color-gold-light:  #d4aa55;
+  --color-gold-pale:   #f0e4c0;
+
+  --color-emerald:     #2d5a4e;
+  --color-emerald-lt:  #3d7a68;
+  --color-emerald-pale: rgba(45,90,78,0.08);
 
   /* Radii */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
+  --radius-card: 20px;
+  --radius-btn:  100px;
+  --radius-icon: 12px;
 
-  /* Font */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  /* Shadows */
+  --shadow-card: 0 12px 40px rgba(26,21,16,0.09);
+  --shadow-btn:  0 4px 18px rgba(45,90,78,0.28);
 }
 
-/* ─── Base Styles ──────────────────────────────────────────────────────────── */
+/* ── Google Fonts ── */
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap");
+
+/* ── Base ── */
+*, *::before, *::after { box-sizing: border-box; }
+
 html {
+  scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
 }
 
 body {
-  margin: 0;
-  padding: 0;
-  font-family: var(--font-sans);
-  font-weight: 500;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: var(--bg);
-  color: var(--text-primary);
+  font-family: var(--font-body);
+  background-color: var(--color-sand);
+  color: var(--color-ink);
+  min-height: 100vh;
   overflow-x: hidden;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
+  /* Subtle noise grain */
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
 }
 
-/* ─── Safe Areas ──────────────────────────────────────────────────────────── */
-body {
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  padding-left: env(safe-area-inset-left, 0px);
-  padding-right: env(safe-area-inset-right, 0px);
+/* ── Typography helpers ── */
+.font-display { font-family: var(--font-display); }
+
+/* ── Animations ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-.safe-area-bottom {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+@keyframes floatCard {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-6px); }
 }
 
-/* ─── Transitions ──────────────────────────────────────────────────────────── */
-* {
-  transition-property: background-color, border-color, color, opacity, transform, box-shadow;
-  transition-duration: 150ms;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(1.4); }
 }
 
-/* ─── Scrollbar ────────────────────────────────────────────────────────────── */
-::-webkit-scrollbar {
-  width: 4px;
+@keyframes spinCompass {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
-::-webkit-scrollbar-track {
+
+.animate-fade-up        { animation: fadeUp 0.7s ease both; }
+.animate-fade-up-1      { animation: fadeUp 0.7s 0.1s ease both; }
+.animate-fade-up-2      { animation: fadeUp 0.7s 0.22s ease both; }
+.animate-fade-up-3      { animation: fadeUp 0.7s 0.36s ease both; }
+.animate-float-card     { animation: floatCard 4s ease-in-out infinite; }
+.animate-pulse-dot      { animation: pulse-dot 2s infinite; }
+
+/* ── Scroll reveal (JS adds .revealed) ── */
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Glass nav ── */
+.glass-nav {
+  background: rgba(245, 240, 232, 0.86);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* ── Buttons ── */
+.btn-primary {
+  background: var(--color-emerald);
+  color: #fff;
+  border-radius: var(--radius-btn);
+  padding: 0.7rem 1.6rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  box-shadow: var(--shadow-btn);
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  border: none;
+  font-family: var(--font-body);
+}
+.btn-primary:hover {
+  background: var(--color-emerald-lt);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(45,90,78,0.32);
+}
+
+.btn-ghost {
   background: transparent;
+  color: var(--color-ink-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-btn);
+  padding: 0.7rem 1.6rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: var(--font-body);
 }
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 2px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
+.btn-ghost:hover {
+  background: var(--color-gold-pale);
+  border-color: var(--color-gold);
+  color: var(--color-gold);
 }
 
-/* ─── Leaflet Overrides ────────────────────────────────────────────────────── */
+/* ── Section label ── */
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.7rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-gold);
+  font-weight: 500;
+  margin-bottom: 0.8rem;
+}
+.section-label::before {
+  content: '';
+  width: 22px;
+  height: 1px;
+  background: var(--color-gold);
+  flex-shrink: 0;
+}
+
+/* ── Feature card ── */
+.feature-card {
+  background: var(--color-sand);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 1.8rem;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.25s, box-shadow 0.25s, border-color 0.25s;
+  cursor: default;
+}
+.feature-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--color-gold), var(--color-emerald));
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.feature-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 40px rgba(26,21,16,0.09);
+  border-color: rgba(184,147,58,0.35);
+}
+.feature-card:hover::before { opacity: 1; }
+
+/* ── Prayer card ── */
+.prayer-card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 1.6rem;
+  box-shadow: var(--shadow-card);
+}
+
+.prayer-item {
+  background: var(--color-sand);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+  transition: all 0.2s;
+}
+.prayer-item.active {
+  background: var(--color-emerald);
+  border-color: var(--color-emerald);
+}
+.prayer-item.active .prayer-name  { color: rgba(255,255,255,0.7); }
+.prayer-item.active .prayer-time  { color: #fff; }
+
+.prayer-name {
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  letter-spacing: 0.08em;
+  margin-bottom: 3px;
+}
+.prayer-time {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+/* ── Qibla strip ── */
+.qibla-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--color-gold-pale);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+}
+
+/* ── Map override (Leaflet) ── */
 .leaflet-container {
-  background: var(--bg-card) !important;
-  font-family: var(--font-sans) !important;
+  border-radius: 16px;
+  font-family: var(--font-body) !important;
 }
-
 .leaflet-popup-content-wrapper {
-  background: var(--bg-card) !important;
-  backdrop-filter: none !important;
-  color: var(--text-primary) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius-md) !important;
-  box-shadow: var(--shadow-lg) !important;
-  font-weight: 500 !important;
+  border-radius: 12px !important;
+  font-family: var(--font-body) !important;
+  box-shadow: var(--shadow-card) !important;
 }
 
-.leaflet-popup-tip {
-  background: var(--bg-card) !important;
-  border: 1px solid var(--border) !important;
+/* ── Nav tab bar (mobile bottom nav) ── */
+.bottom-nav {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: rgba(245,240,232,0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 0.6rem 0 calc(0.6rem + env(safe-area-inset-bottom));
+  z-index: 50;
 }
 
-.leaflet-popup-close-button {
-  color: var(--text-tertiary) !important;
+.bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 0.3rem 0.9rem;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--color-muted);
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+}
+.bottom-nav-item.active {
+  color: var(--color-emerald);
+  background: var(--color-emerald-pale);
+}
+.bottom-nav-item svg {
+  width: 22px;
+  height: 22px;
 }
 
-.leaflet-control-zoom {
-  border: none !important;
-  box-shadow: var(--shadow-md) !important;
+/* ── Form inputs ── */
+.input-field {
+  background: var(--color-sand);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.88rem;
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+  width: 100%;
+  appearance: none;
+}
+.input-field:focus {
+  border-color: var(--color-gold);
+  box-shadow: 0 0 0 3px rgba(184,147,58,0.12);
+}
+.input-field::placeholder { color: var(--color-muted); }
+
+.input-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  font-weight: 500;
+  margin-bottom: 6px;
+  display: block;
 }
 
-.leaflet-control-zoom a {
-  background: var(--bg-card) !important;
-  color: var(--text-primary) !important;
-  border: 1px solid var(--border) !important;
-  font-weight: 600 !important;
+/* ── Card container ── */
+.surface {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
 }
 
-.leaflet-control-zoom a:hover {
-  background: var(--bg-secondary) !important;
+/* ── Quote strip ── */
+.quote-emerald {
+  background: var(--color-emerald);
 }
 
-.leaflet-control-attribution {
-  background: rgba(255, 255, 255, 0.8) !important;
-  color: var(--text-tertiary) !important;
-  font-size: 10px !important;
+/* ── Floating badge ── */
+.float-badge {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 0.55rem 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 8px 28px rgba(26,21,16,0.10);
+  font-size: 0.78rem;
+  color: var(--color-ink-soft);
+  white-space: nowrap;
 }
 
-.leaflet-control-attribution a {
-  color: var(--text-secondary) !important;
+/* ── Divider ── */
+.gold-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-gold), transparent);
+  opacity: 0.3;
+  margin: 0 2rem;
 }
 
-/* ─── Animations (minimal) ─────────────────────────────────────────────────── */
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-.fade-in {
-  animation: fadeIn 200ms ease-out;
-}
-
-.slide-up {
-  animation: slideUp 250ms ease-out;
-}
-
-.scale-in {
-  animation: scaleIn 200ms ease-out;
-}
+/* ── Safe area padding ── */
+.safe-top    { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
