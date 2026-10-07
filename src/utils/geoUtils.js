@@ -30,6 +30,7 @@ export const HADD_AL_TARAKHKHUS_KM = 22; // 22 km = 13.7 miles (round-trip: 8 fa
 export const ONE_WAY_HADD_KM = 44; // 44 km = 27.3 miles (one-way: 8 farsakhs)
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
+const OVERPASS_BASE = 'https://overpass-api.de/api/interpreter';
 const NOMINATIM_USER_AGENT = 'MusafirTravelApp/1.0 (Islamic travel rulings calculator)';
 const CACHE_KEY = 'musafir_user_cities';
 
@@ -783,4 +784,199 @@ export function generateUrfPolygon(cityName) {
   const city = getUrfBoundary(cityName);
   if (!city) return null;
   return city.boundary;
+}
+
+// ─── Overpass API: Fetch Built-Up Area (True 'Urf Boundary) ─────────────────
+
+/**
+ * Fetch the actual built-up area of a city using OpenStreetMap's Overpass API.
+ * This queries for residential, commercial, and industrial landuse polygons
+ * and merges them into a single outline — giving a much better 'Urf boundary
+ * approximation than the administrative city limit.
+ *
+ * @param {string} cityName
+ * @param {string} state - Optional state for disambiguation
+ * @returns {Promise<{center: [number, number], boundary: [number, number][]} | null>}
+ */
+export async function fetchUrfBoundary(cityName, state) {
+  // First get the city center via Nominatim
+  const queries = state
+    ? [`${cityName}, ${state}, USA`, `${cityName}, USA`, `${cityName}`]
+    : [`${cityName}`, `${cityName}, USA`];
+
+  let center = null;
+  for (const query of queries) {
+    try {
+      const url = `${NOMINATIM_BASE}/search?q=${encodeURIComponent(query)}&format=jsonv2&limit=1`;
+      const results = await fetchWithThrottle(url);
+      if (results && results.length > 0) {
+        center = [parseFloat(results[0].lat), parseFloat(results[0].lon)];
+        break;
+      }
+    } catch {}
+  }
+  if (!center) return null;
+
+  // Query Overpass for built-up landuse areas within 30 km of the city center
+  const overpassQuery = `
+    [out:json][timeout:15];
+    (
+      way["landuse"~"residential|commercial|industrial|retail|mixed"](around:30000,${center[0]},${center[1]});
+      relation["landuse"~"residential|commercial|industrial|retail|mixed"](around:30000,${center[0]},${center[1]});
+    );
+    out geom;
+  `;
+
+  try {
+    const response = await fetch(OVERPASS_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `data=${encodeURIComponent(overpassQuery)}`,
+    });
+    const data = await response.json();
+
+    // Collect all polygon coordinates from the results
+    const allPoints = [];
+    const elements = data.elements || [];
+    for (const el of elements) {
+      if (el.geometry && el.geometry.length > 0) {
+        for (const node of el.geometry) {
+          allPoints.push([node.lat, node.lon]);
+        }
+      }
+    }
+
+    if (allPoints.length < 10) {
+      // Not enough built-up data — fall back to a circular approximation
+      return { center, boundary: generateApproximateBoundary(center[0], center[1], 15) };
+    }
+
+    // Compute a convex hull to merge all the built-up areas into one outline
+    const hull = convexHull(allPoints);
+    if (hull && hull.length >= 3) {
+      // Close the polygon
+      const closed = [...hull];
+      const first = hull[0];
+      const last = hull[hull.length - 1];
+      if (Math.abs(first[0] - last[0]) > 0.0001 || Math.abs(first[1] - last[1]) > 0.0001) {
+        closed.push([first[0], first[1]]);
+      }
+      return { center, boundary: closed };
+    }
+
+    return { center, boundary: generateApproximateBoundary(center[0], center[1], 15) };
+  } catch (e) {
+    console.log(`[OVERPASS] Failed for ${cityName}: ${e.message}`);
+    return { center, boundary: generateApproximateBoundary(center[0], center[1], 15) };
+  }
+}
+
+// ─── Convex Hull (Monotone Chain) ─────────────────────────────────────────────
+
+function convexHull(points) {
+  if (points.length < 3) return null;
+
+  // Sort by lat then lng
+  const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+
+  const lower = [];
+  for (let i = 0; i < sorted.length; i++) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], sorted[i]) <= 0) {
+      lower.pop();
+    }
+    lower.push(sorted[i]);
+  }
+
+  const upper = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], sorted[i]) <= 0) {
+      upper.pop();
+    }
+    upper.push(sorted[i]);
+  }
+
+  // Remove last point of each list (it's repeated as first of the other)
+  lower.pop();
+  upper.pop();
+
+  return [...lower, ...upper];
+}
+
+function cross(o, a, b) {
+  return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+}
+
+// ─── Origin-Based Status Calculation ──────────────────────────────────────────
+
+/**
+ * Calculate Qasr status based on distance from a journey origin city.
+ * This handles the case where someone is in a remote area — we check
+ * if they've traveled far enough from their origin to be a traveler.
+ *
+ * @param {number} currentLat
+ * @param {number} currentLng
+ * @param {string} originCityName - The city where the journey started
+ * @param {string} boundaryType - 'round-trip' or 'one-way'
+ * @returns {Object} Status object
+ */
+export function calculateQasrStatusFromOrigin(currentLat, currentLng, originCityName, boundaryType = 'round-trip') {
+  const city = getUrfBoundary(originCityName);
+  if (!city) {
+    return {
+      status: 'unknown',
+      message: `No boundary data for origin city "${originCityName}". Please select a supported city.`,
+      distanceFromOrigin: null,
+      haddDistance: boundaryType === 'one-way' ? ONE_WAY_HADD_KM : HADD_AL_TARAKHKHUS_KM,
+      originCity: originCityName,
+    };
+  }
+
+  const distance = boundaryType === 'one-way' ? ONE_WAY_HADD_KM : HADD_AL_TARAKHKHUS_KM;
+  const distFromOrigin = haversineDistance(currentLat, currentLng, city.center[0], city.center[1]);
+
+  // Check if still inside the origin's 'Urf boundary
+  const insideUrf = pointInPolygon([currentLat, currentLng], city.boundary);
+
+  // Check if beyond the Hadd boundary from origin
+  const haddPolygon = generateBoundaryAtDistance(originCityName, distance);
+  let beyondHadd = false;
+  if (haddPolygon && haddPolygon.length >= 3) {
+    beyondHadd = !pointInPolygon([currentLat, currentLng], haddPolygon);
+  } else {
+    // Fallback: circle-based check
+    let maxDist = 0;
+    for (let i = 0; i < city.boundary.length; i++) {
+      const [blat, blng] = city.boundary[i];
+      const d = haversineDistance(city.center[0], city.center[1], blat, blng);
+      if (d > maxDist) maxDist = d;
+    }
+    const haddRadius = maxDist + distance;
+    beyondHadd = distFromOrigin > haddRadius;
+  }
+
+  let status;
+  let message;
+
+  if (insideUrf) {
+    status = 'resident';
+    message = `You are still within the 'Urf boundary of your origin (${originCityName}). You are a Resident (Hadir). Prayers: Tamam (Full). Fasting: Valid.`;
+  } else if (!beyondHadd) {
+    status = 'transition';
+    message = `You have left the 'Urf boundary of ${originCityName} but have not yet reached Hadd al-Tarakhkhus (${distance} km). Prayers: Tamam (Full). Fasting: Valid.`;
+  } else {
+    status = 'traveler';
+    message = `You are beyond Hadd al-Tarakhkhus (${distance} km) from your origin (${originCityName}). You are a Traveler (Musafir). Prayers: Qasr (Shortened to 2 Rak'ahs). Fasting: Invalid (Qada required).`;
+  }
+
+  return {
+    status,
+    message,
+    distanceFromOrigin: distFromOrigin,
+    isInsideUrf: insideUrf,
+    isBeyondHadd: beyondHadd,
+    haddDistance: distance,
+    originCity: originCityName,
+    originCenter: city.center,
+    originBoundary: city.boundary,
+  };
 }

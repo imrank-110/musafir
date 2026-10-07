@@ -6,12 +6,14 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
   calculateQasrStatus,
+  calculateQasrStatusFromOrigin,
   getSupportedCities,
   getUrfBoundary,
   generateUrfPolygon,
   generateHaddBoundary,
   generateOneWayBoundary,
   generateBoundaryAtDistance,
+  fetchUrfBoundary,
   HADD_AL_TARAKHKHUS_KM,
   ONE_WAY_HADD_KM,
   reverseGeocode,
@@ -195,6 +197,8 @@ export default function QasrMap() {
   const [isLoading, setIsLoading] = useState(false);
   const [showQuestionnaire, setShowQuestionnaire] = useState(false);
   const [detectedCityName, setDetectedCityName] = useState('');
+  const [originCity, setOriginCity] = useState(''); // Journey origin city
+  const [useOrigin, setUseOrigin] = useState(false); // Whether to use origin-based calculation
   const [boundaryType, setBoundaryType] = useState('round-trip'); // 'round-trip' | 'one-way'
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [haddAlerted, setHaddAlerted] = useState(false);
@@ -247,9 +251,29 @@ export default function QasrMap() {
       const cityData = getUrfBoundary(reverseCity);
       if (cityData) { setCityName(reverseCity); setQasrStatus(calculateQasrStatus(latitude, longitude, reverseCity)); setError(''); setDetectedCityName(`Located: ${reverseCity}, ${geoResult.state || ''}`); return; }
       setDetectedCityName(`Discovering: ${reverseCity}...`);
-      const boundaryData = await fetchCityBoundary(reverseCity, geoResult.state || '');
-      if (boundaryData?.boundary) { saveUserCity(reverseCity, { center: boundaryData.center, boundary: boundaryData.boundary }); setCityName(reverseCity); setQasrStatus(calculateQasrStatus(latitude, longitude, reverseCity)); setError(''); setDetectedCityName(`New city discovered: ${reverseCity}`); }
-      else { setCityName(''); setQasrStatus({ isInsideUrf: null, distanceFromBoundary: null, isOutsideHadd: true, status: 'unknown', message: `No boundary data for "${reverseCity}". You are likely a Traveler. Please consult a qualified Islamic authority.`, cityName: reverseCity, cityCenter: [latitude, longitude] }); setDetectedCityName(`Unknown city: ${reverseCity}`); }
+      // Try Overpass API first for a true 'Urf boundary (built-up area)
+      const urfData = await fetchUrfBoundary(reverseCity, geoResult.state || '');
+      if (urfData?.boundary) {
+        saveUserCity(reverseCity, { center: urfData.center, boundary: urfData.boundary });
+        setCityName(reverseCity);
+        setQasrStatus(calculateQasrStatus(latitude, longitude, reverseCity));
+        setError('');
+        setDetectedCityName(`'Urf boundary generated: ${reverseCity}`);
+      } else {
+        // Fallback: administrative boundary from Nominatim
+        const boundaryData = await fetchCityBoundary(reverseCity, geoResult.state || '');
+        if (boundaryData?.boundary) {
+          saveUserCity(reverseCity, { center: boundaryData.center, boundary: boundaryData.boundary });
+          setCityName(reverseCity);
+          setQasrStatus(calculateQasrStatus(latitude, longitude, reverseCity));
+          setError('');
+          setDetectedCityName(`New city discovered: ${reverseCity}`);
+        } else {
+          setCityName('');
+          setQasrStatus({ isInsideUrf: null, distanceFromBoundary: null, isOutsideHadd: true, status: 'unknown', message: `No boundary data for "${reverseCity}". You are likely a Traveler. Please consult a qualified Islamic authority.`, cityName: reverseCity, cityCenter: [latitude, longitude] });
+          setDetectedCityName(`Unknown city: ${reverseCity}`);
+        }
+      }
     } catch (e) { setError(`Could not determine location: ${e.message}. Please select a city from the dropdown.`); }
   }
 
@@ -316,6 +340,40 @@ export default function QasrMap() {
             </select>
           </div>
         </div>
+
+        {/* Journey Origin */}
+        <div className="mt-3 pt-3 border-t border-[var(--border-light)]">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-[var(--text-secondary)]">Journey Origin</span>
+            <button
+              onClick={() => {
+                setUseOrigin(!useOrigin);
+                if (!useOrigin && cityName) setOriginCity(cityName);
+              }}
+              className={`text-xs font-medium px-2.5 py-1 rounded-[var(--radius-sm)] transition-colors ${
+                useOrigin ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)]'
+              }`}
+            >
+              {useOrigin ? 'Using origin' : 'Set origin'}
+            </button>
+          </div>
+          {useOrigin && (
+            <div>
+              <select
+                value={originCity}
+                onChange={e => setOriginCity(e.target.value)}
+                className="w-full h-11 px-3 bg-white border border-[var(--border)] rounded-[var(--radius-sm)] text-sm font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-light)]"
+              >
+                <option value="">Select origin city...</option>
+                {supportedCities.map(city => <option key={city} value={city}>{city}</option>)}
+              </select>
+              <p className="text-[11px] text-[var(--text-tertiary)] mt-1">
+                Status will be calculated based on distance from your origin city.
+              </p>
+            </div>
+          )}
+        </div>
+
         {error && <div className="mt-3 px-3.5 py-2.5 bg-[#fef2f2] border border-[#fecaca] rounded-[var(--radius-sm)] text-sm text-[var(--danger)]">{error}</div>}
       </div>
 
