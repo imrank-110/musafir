@@ -26,7 +26,8 @@
 const DEG = Math.PI / 180;
 const RAD = 180 / Math.PI;
 const EARTH_RADIUS_KM = 6371;
-export const HADD_AL_TARAKHKHUS_KM = 22; // 22 km = 13.7 miles
+export const HADD_AL_TARAKHKHUS_KM = 22; // 22 km = 13.7 miles (round-trip: 8 farsakhs)
+export const ONE_WAY_HADD_KM = 44; // 44 km = 27.3 miles (one-way: 8 farsakhs)
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
 const NOMINATIM_USER_AGENT = 'MusafirTravelApp/1.0 (Islamic travel rulings calculator)';
@@ -704,14 +705,17 @@ export function calculateDistanceToHadd(lat, lng, cityName) {
 }
 
 /**
- * Generate the Hadd al-Tarakhkhus boundary.
+ * Generate a boundary polygon at a given distance from the city's 'Urf boundary.
+ * @param {string} cityName
+ * @param {number} distanceKm - Distance in km to buffer outward (e.g. 22 or 44)
+ * @returns {[number, number][] | null}
  */
-export function generateHaddBoundary(cityName) {
+export function generateBoundaryAtDistance(cityName, distanceKm) {
   const city = getUrfBoundary(cityName);
   if (!city) return null;
 
   try {
-    const buffered = bufferPolygon(city.boundary, HADD_AL_TARAKHKHUS_KM, city.center);
+    const buffered = bufferPolygon(city.boundary, distanceKm, city.center);
     if (buffered && buffered.length >= 3) {
       let valid = true;
       for (let i = 0; i < buffered.length; i++) {
@@ -729,15 +733,30 @@ export function generateHaddBoundary(cityName) {
     const dist = haversineDistance(city.center[0], city.center[1], lat, lng);
     if (dist > maxDist) maxDist = dist;
   }
-  return generateRadiusCircle(city.center[0], city.center[1], maxDist + HADD_AL_TARAKHKHUS_KM, 64);
+  return generateRadiusCircle(city.center[0], city.center[1], maxDist + distanceKm, 64);
 }
 
-function isBeyondHadd(lat, lng, cityName) {
+/**
+ * Generate the Hadd al-Tarakhkhus boundary (22 km round-trip).
+ */
+export function generateHaddBoundary(cityName) {
+  return generateBoundaryAtDistance(cityName, HADD_AL_TARAKHKHUS_KM);
+}
+
+/**
+ * Generate the one-way boundary (44 km).
+ */
+export function generateOneWayBoundary(cityName) {
+  return generateBoundaryAtDistance(cityName, ONE_WAY_HADD_KM);
+}
+
+function isBeyondHadd(lat, lng, cityName, boundaryType) {
   const city = getUrfBoundary(cityName);
   if (!city) return false;
-  const haddPolygon = generateHaddBoundary(cityName);
-  if (haddPolygon && haddPolygon.length >= 3) {
-    return !pointInPolygon([lat, lng], haddPolygon);
+  const distance = boundaryType === 'one-way' ? ONE_WAY_HADD_KM : HADD_AL_TARAKHKHUS_KM;
+  const boundaryPolygon = generateBoundaryAtDistance(cityName, distance);
+  if (boundaryPolygon && boundaryPolygon.length >= 3) {
+    return !pointInPolygon([lat, lng], boundaryPolygon);
   }
   let maxDist = 0;
   for (let i = 0; i < city.boundary.length; i++) {
@@ -745,7 +764,7 @@ function isBeyondHadd(lat, lng, cityName) {
     const dist = haversineDistance(city.center[0], city.center[1], blat, blng);
     if (dist > maxDist) maxDist = dist;
   }
-  const haddRadius = maxDist + HADD_AL_TARAKHKHUS_KM;
+  const haddRadius = maxDist + distance;
   const pointDist = haversineDistance(city.center[0], city.center[1], lat, lng);
   return pointDist > haddRadius;
 }

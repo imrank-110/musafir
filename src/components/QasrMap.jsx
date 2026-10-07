@@ -10,7 +10,10 @@ import {
   getUrfBoundary,
   generateUrfPolygon,
   generateHaddBoundary,
+  generateOneWayBoundary,
+  generateBoundaryAtDistance,
   HADD_AL_TARAKHKHUS_KM,
+  ONE_WAY_HADD_KM,
   reverseGeocode,
   fetchCityBoundary,
   findCityForLocation,
@@ -192,6 +195,7 @@ export default function QasrMap() {
   const [isLoading, setIsLoading] = useState(false);
   const [showQuestionnaire, setShowQuestionnaire] = useState(false);
   const [detectedCityName, setDetectedCityName] = useState('');
+  const [boundaryType, setBoundaryType] = useState('round-trip'); // 'round-trip' | 'one-way'
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [haddAlerted, setHaddAlerted] = useState(false);
   const [distanceToHadd, setDistanceToHadd] = useState(null);
@@ -267,7 +271,10 @@ export default function QasrMap() {
   }, []);
 
   const urfPolygon = cityName ? generateUrfPolygon(cityName) : null;
-  const haddBoundary = cityName ? generateHaddBoundary(cityName) : null;
+  const activeBoundary = cityName
+    ? (boundaryType === 'one-way' ? generateOneWayBoundary(cityName) : generateHaddBoundary(cityName))
+    : null;
+  const activeDistance = boundaryType === 'one-way' ? ONE_WAY_HADD_KM : HADD_AL_TARAKHKHUS_KM;
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -312,6 +319,35 @@ export default function QasrMap() {
         {error && <div className="mt-3 px-3.5 py-2.5 bg-[#fef2f2] border border-[#fecaca] rounded-[var(--radius-sm)] text-sm text-[var(--danger)]">{error}</div>}
       </div>
 
+      {/* Boundary Type Toggle */}
+      {cityName && (
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xs font-medium text-[var(--text-secondary)]">Boundary:</span>
+          <div className="flex bg-[var(--bg-secondary)] rounded-[var(--radius-sm)] p-0.5">
+            <button
+              onClick={() => setBoundaryType('round-trip')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-[6px] transition-all ${
+                boundaryType === 'round-trip'
+                  ? 'bg-white text-[var(--text-primary)] shadow-[var(--shadow-sm)]'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              Round-trip (22 km)
+            </button>
+            <button
+              onClick={() => setBoundaryType('one-way')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-[6px] transition-all ${
+                boundaryType === 'one-way'
+                  ? 'bg-white text-[var(--text-primary)] shadow-[var(--shadow-sm)]'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              One-way (44 km)
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Map + Sidebar */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
@@ -320,7 +356,18 @@ export default function QasrMap() {
               <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
               <MapController center={location ? [location.lat, location.lng] : null} zoom={10} />
               {urfPolygon && <Polygon positions={urfPolygon} pathOptions={{ color: '#22c55e', weight: 2.5, fillColor: '#22c55e', fillOpacity: 0.1 }} />}
-              {haddBoundary && <Polygon positions={haddBoundary} pathOptions={{ color: '#6b7280', weight: 3, fillColor: '#6b7280', fillOpacity: 0.06, dashArray: '10, 8' }} />}
+              {activeBoundary && (
+                <Polygon
+                  positions={activeBoundary}
+                  pathOptions={{
+                    color: boundaryType === 'one-way' ? '#f97316' : '#6b7280',
+                    weight: 3,
+                    fillColor: boundaryType === 'one-way' ? '#f97316' : '#6b7280',
+                    fillOpacity: boundaryType === 'one-way' ? 0.15 : 0.06,
+                    dashArray: boundaryType === 'one-way' ? 'none' : '10, 8',
+                  }}
+                />
+              )}
               {monitorPath.length > 1 && <Polygon positions={monitorPath} pathOptions={{ color: 'var(--accent,#b8860b)', weight: 2.5, fillOpacity: 0 }} />}
               {location && <Marker position={[location.lat, location.lng]} icon={isMonitoring ? monitoringIcon : userLocationIcon}>
                 <Popup><div className="text-sm"><strong>Your Location</strong><br />{location.lat.toFixed(4)}, {location.lng.toFixed(4)}<br />Status: {qasrStatus?.status === 'traveler' ? 'Traveler' : qasrStatus?.status === 'resident' ? 'Resident' : 'Unknown'}</div></Popup>
@@ -329,7 +376,10 @@ export default function QasrMap() {
           </div>
           <div className="flex flex-wrap gap-3 mt-2">
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#22c55e', opacity: 0.5 }} /><span>'Urf (Resident Zone)</span></div>
-            <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#6b7280', opacity: 0.4 }} /><span>Hadd (22 km)</span></div>
+            <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
+              <div className="w-3 h-3 rounded" style={{ background: boundaryType === 'one-way' ? '#f97316' : '#6b7280', opacity: boundaryType === 'one-way' ? 0.5 : 0.4 }} />
+              <span>{boundaryType === 'one-way' ? 'One-way (44 km)' : 'Round-trip (22 km)'}</span>
+            </div>
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-2.5 h-2.5 bg-[var(--accent)] rounded-full" /><span>Your Location</span></div>
             {isMonitoring && <div className="flex items-center gap-1.5 text-xs text-[var(--accent)]"><div className="w-2.5 h-2.5 bg-[var(--accent)] rounded-full animate-pulse" /><span>Monitoring</span></div>}
           </div>
