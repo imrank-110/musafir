@@ -11,13 +11,14 @@ cities, generated from OpenStreetMap landuse data. A copy is also compiled
 into the app bundle at build time (`src/data/city-boundaries.json`), so every
 deployment — web, Vercel, or Capacitor — always ships with the data:
 
-- **Source**: OSM `landuse=residential|commercial|industrial|retail|mixed`
-  polygons within ~50 km of each city center (queried from public Overpass mirrors).
-- **Method**: polygons are merged with a 500 m gap-bridging buffer (so adjacent
-  subdivisions connect into one continuous built-up outline without swallowing
-  open countryside), satellite fragments are dropped, small holes are filled,
-  and the outline is simplified to ~100 m so it keeps its jagged
-  "follows-the-houses" character.
+- **Source**: each city's **legal (administrative) boundary** (Nominatim) as the
+  base, **expanded by the continuous built-up area** (OSM
+  `landuse=residential|commercial|industrial|retail|mixed` merged at a 500 m
+  gap-bridging buffer, anchored to the legal city within ~2.5 km).
+- **Method**: 'Urf = legal boundary ∪ built-up sprawl, satellite fragments
+  dropped, small holes filled, simplified to ~100 m so it keeps the jagged
+  "follows-the-houses" character. Metro labels union their member cities
+  adaptively.
 - The app loads the bundle at startup; it takes priority over every other source.
 
 ### Regenerating the data
