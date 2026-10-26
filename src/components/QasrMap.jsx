@@ -5,14 +5,18 @@ import { Geolocation } from '@capacitor/geolocation';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
-  calculateQasrStatus,
+  calculateStatusWithHadd,
   getSupportedCities,
   getUrfBoundary,
   getApproximateBoundary,
   getBoundarySource,
+  getHaddRange,
   generateUrfPolygon,
   generateHaddBoundary,
+  generateOneWayBoundary,
+  generateHaddZonePolygon,
   HADD_AL_TARAKHKHUS_KM,
+  ONE_WAY_HADD_KM,
   reverseGeocode,
   fetchUrfBoundary,
   fetchCityBoundary,
@@ -202,6 +206,11 @@ export default function QasrMap() {
   const [monitorPath, setMonitorPath] = useState([]);
   const [boundariesLoaded, setBoundariesLoaded] = useState(false);
   const [showLegacyBoundary, setShowLegacyBoundary] = useState(false);
+  const [boundaryType, setBoundaryType] = useState('round-trip'); // 'round-trip' | 'one-way'
+  const [showHaddZone, setShowHaddZone] = useState(true);
+  const [showHaddExplainer, setShowHaddExplainer] = useState(false);
+  const [userHaddKm, setUserHaddKm] = useState(6);
+  const [journeyFarsakhs, setJourneyFarsakhs] = useState(8);
   const watchIdRef = useRef(null);
   const prevStatusRef = useRef(null);
   const supportedCities = getSupportedCities();
@@ -219,11 +228,28 @@ export default function QasrMap() {
     return () => { cancelled = true; };
   }, []);
 
+  // Load the saved Hadd al-Tarakhkhus km from localStorage.
+  useEffect(() => {
+    try { const saved = localStorage.getItem('musafir_user_hadd'); if (saved) setUserHaddKm(parseFloat(saved)); } catch (e) { /* ignore */ }
+  }, []);
+
+  // Recalc status whenever the Hadd slider or journey length changes.
+  useEffect(() => {
+    if (cityName && location) {
+      setQasrStatus(calculateStatusWithHadd(location.lat, location.lng, cityName, userHaddKm, journeyFarsakhs));
+    }
+  }, [userHaddKm, journeyFarsakhs, cityName, location]);
+
+  const handleHaddChange = useCallback((newKm) => {
+    setUserHaddKm(newKm);
+    try { localStorage.setItem('musafir_user_hadd', newKm.toString()); } catch (e) {}
+  }, []);
+
   const handlePositionUpdate = useCallback((lat, lng) => {
     setLocation({ lat, lng });
     setMonitorPath(prev => [...prev, [lat, lng]]);
     if (cityName) {
-      const status = calculateQasrStatus(lat, lng, cityName);
+      const status = calculateStatusWithHadd(lat, lng, cityName, userHaddKm, journeyFarsakhs);
       setQasrStatus(status);
       const dist = calculateDistanceToHadd(lat, lng, cityName);
       setDistanceToHadd(dist);
@@ -231,7 +257,7 @@ export default function QasrMap() {
       if (prevStatusRef.current === 'resident' && status.status === 'traveler') setHaddAlerted(false);
       prevStatusRef.current = status.status;
     }
-  }, [cityName, haddAlerted]);
+  }, [cityName, userHaddKm, journeyFarsakhs, haddAlerted]);
 
   const startMonitoring = useCallback(async () => {
     if (!cityName) { setError('Please select a city or use your current location first.'); return; }
@@ -249,22 +275,29 @@ export default function QasrMap() {
     if (watchIdRef.current !== null) { try { Geolocation.clearWatch({ id: watchIdRef.current }); } catch { navigator.geolocation.clearWatch(watchIdRef.current); } watchIdRef.current = null; }
   }, []);
 
+  // Apply the city-recommended Hadd al-Tarakhkhus and compute the full ruling.
+  const applyLocationStatus = useCallback((latitude, longitude, city) => {
+    const range = getHaddRange(city);
+    handleHaddChange(range.recommended);
+    return calculateStatusWithHadd(latitude, longitude, city, range.recommended, journeyFarsakhs);
+  }, [handleHaddChange, journeyFarsakhs]);
+
   async function processLocation(latitude, longitude) {
     setLocation({ lat: latitude, lng: longitude }); setIsLoading(false);
     const matchedCity = findCityForLocation(latitude, longitude);
-    if (matchedCity) { setCityName(matchedCity); setQasrStatus(calculateQasrStatus(latitude, longitude, matchedCity)); setError(''); setDetectedCityName(`Snapped to ${matchedCity}`); return; }
+    if (matchedCity) { setCityName(matchedCity); setQasrStatus(applyLocationStatus(latitude, longitude, matchedCity)); setError(''); setDetectedCityName(`Snapped to ${matchedCity}`); return; }
     try {
       const geoResult = await reverseGeocode(latitude, longitude);
       const reverseCity = geoResult.city;
       if (!reverseCity) { setError('Could not determine your city. Please select one from the dropdown.'); return; }
       const cityData = getUrfBoundary(reverseCity);
-      if (cityData) { setCityName(reverseCity); setQasrStatus(calculateQasrStatus(latitude, longitude, reverseCity)); setError(''); setDetectedCityName(`Located: ${reverseCity}, ${geoResult.state || ''}`); return; }
+      if (cityData) { setCityName(reverseCity); setQasrStatus(applyLocationStatus(latitude, longitude, reverseCity)); setError(''); setDetectedCityName(`Located: ${reverseCity}, ${geoResult.state || ''}`); return; }
       setDetectedCityName(`Discovering: ${reverseCity}...`);
       // Prefer a real built-up outline; fall back to the administrative boundary.
       let boundaryData = null;
       try { boundaryData = await fetchUrfBoundary(reverseCity, geoResult.state || ''); } catch {}
       if (!boundaryData?.boundary) { boundaryData = await fetchCityBoundary(reverseCity, geoResult.state || ''); }
-      if (boundaryData?.boundary) { saveUserCity(reverseCity, { center: boundaryData.center, boundary: boundaryData.boundary }); setCityName(reverseCity); setQasrStatus(calculateQasrStatus(latitude, longitude, reverseCity)); setError(''); setDetectedCityName(`New city discovered: ${reverseCity}`); }
+      if (boundaryData?.boundary) { saveUserCity(reverseCity, { center: boundaryData.center, boundary: boundaryData.boundary }); setCityName(reverseCity); setQasrStatus(applyLocationStatus(latitude, longitude, reverseCity)); setError(''); setDetectedCityName(`New city discovered: ${reverseCity}`); }
       else { setCityName(''); setQasrStatus({ isInsideUrf: null, distanceFromBoundary: null, isOutsideHadd: true, status: 'unknown', message: `No boundary data for "${reverseCity}". You are likely a Traveler. Please consult a qualified Islamic authority.`, cityName: reverseCity, cityCenter: [latitude, longitude] }); setDetectedCityName(`Unknown city: ${reverseCity}`); }
     } catch (e) { setError(`Could not determine location: ${e.message}. Please select a city from the dropdown.`); }
   }
@@ -283,11 +316,24 @@ export default function QasrMap() {
   const handleCitySelect = useCallback((city) => {
     setCityName(city);
     const cityData = getUrfBoundary(city);
-    if (cityData) { setLocation({ lat: cityData.center[0], lng: cityData.center[1] }); setQasrStatus(calculateQasrStatus(cityData.center[0], cityData.center[1], city)); setError(''); setDetectedCityName(''); }
-  }, []);
+    if (cityData) {
+      setLocation({ lat: cityData.center[0], lng: cityData.center[1] });
+      const range = getHaddRange(city);
+      handleHaddChange(range.recommended);
+      setQasrStatus(calculateStatusWithHadd(cityData.center[0], cityData.center[1], city, range.recommended, journeyFarsakhs));
+      setError(''); setDetectedCityName('');
+    }
+  }, [handleHaddChange, journeyFarsakhs]);
 
   const urfPolygon = cityName ? generateUrfPolygon(cityName) : null;
-  const haddBoundary = cityName ? generateHaddBoundary(cityName) : null;
+  // The 8-farsakh ring: 22 km round-trip / 44 km one-way, a simple outward
+  // extension from each point of the 'urf boundary.
+  const haddBoundary = cityName
+    ? (boundaryType === 'one-way' ? generateOneWayBoundary(cityName) : generateHaddBoundary(cityName))
+    : null;
+  // The Hadd al-Tarakhkhus (visibility/audibility) zone: user-adjustable km.
+  const haddZonePolygon = (cityName && showHaddZone) ? generateHaddZonePolygon(cityName, userHaddKm) : null;
+  const haddRange = cityName ? getHaddRange(cityName) : { min: 2, recommended: 5, max: 14 };
   const legacyPolygon = (cityName && showLegacyBoundary) ? getApproximateBoundary(cityName) : null;
   const boundaryInfo = cityName ? getBoundarySource(cityName) : null;
 
@@ -331,6 +377,46 @@ export default function QasrMap() {
             </select>
           </div>
         </div>
+        <div className="mt-4 pt-4 border-t border-[var(--border-light)]">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-[var(--text-secondary)]">Journey Boundary</span>
+            <div className="flex gap-1">
+              <button onClick={() => setBoundaryType('round-trip')}
+                className={`text-xs font-medium px-2.5 py-1 rounded-[var(--radius-sm)] transition-colors ${boundaryType === 'round-trip' ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)]'}`}>Round-trip (22 km)</button>
+              <button onClick={() => setBoundaryType('one-way')}
+                className={`text-xs font-medium px-2.5 py-1 rounded-[var(--radius-sm)] transition-colors ${boundaryType === 'one-way' ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)]'}`}>One-way (44 km)</button>
+            </div>
+          </div>
+          <div className="flex items-center justify-between mt-3 pt-3 border-t border-[var(--border-light)]">
+            <span className="text-xs font-medium text-[var(--text-secondary)]">Intended Journey</span>
+            <select value={journeyFarsakhs} onChange={e => setJourneyFarsakhs(parseInt(e.target.value, 10))} disabled={isMonitoring}
+              className="h-8 px-2 bg-white border border-[var(--border)] rounded-[var(--radius-sm)] text-xs font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]">
+              {[4, 6, 8].map(f => <option key={f} value={f}>{f} farsakhs</option>)}
+            </select>
+          </div>
+          <div className="mt-3 pt-3 border-t border-[var(--border-light)]">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-[var(--text-secondary)]">Hadd al-Tarakhkhus</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-[#8b5cf6]">{userHaddKm} km</span>
+                <button onClick={() => setShowHaddExplainer(!showHaddExplainer)}
+                  className="w-6 h-6 rounded-full bg-transparent hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center justify-center text-xs font-semibold" title="Why this recommendation?">ℹ</button>
+              </div>
+            </div>
+            <input type="range" min={haddRange.min} max={haddRange.max} step="0.5" value={userHaddKm}
+              onChange={e => handleHaddChange(parseFloat(e.target.value))} disabled={isMonitoring}
+              className="w-full accent-[#8b5cf6]" />
+            <div className="flex justify-between text-[10px] text-[var(--text-tertiary)] mt-0.5"><span>{haddRange.min} km</span><span>{haddRange.max} km</span></div>
+            {showHaddExplainer && (
+              <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed mt-2">
+                The Hadd al-Tarakhkhus is the point beyond which the city can no longer be seen or its adhan
+                heard (per Ayatollah Sistani). For {cityName || 'this city'} the recommended value is
+                <strong> {haddRange.recommended} km</strong>, based on typical edge-building height and visibility.
+                Adjust it to your own judgment.
+              </p>
+            )}
+          </div>
+        </div>
         {error && <div className="mt-3 px-3.5 py-2.5 bg-[#fef2f2] border border-[#fecaca] rounded-[var(--radius-sm)] text-sm text-[var(--danger)]">{error}</div>}
       </div>
 
@@ -349,7 +435,8 @@ export default function QasrMap() {
                   interactive={false}
                 />
               )}
-              {haddBoundary && <Polygon positions={haddBoundary} pathOptions={{ color: '#6b7280', weight: 3, fillColor: '#6b7280', fillOpacity: 0.06, dashArray: '10, 8' }} />}
+              {haddZonePolygon && <Polygon positions={haddZonePolygon} pathOptions={{ color: '#8b5cf6', weight: 2, fillColor: '#8b5cf6', fillOpacity: 0.05 }} />}
+              {haddBoundary && <Polygon positions={haddBoundary} pathOptions={{ color: boundaryType === 'one-way' ? '#f97316' : '#6b7280', weight: 3, fillColor: boundaryType === 'one-way' ? '#f97316' : '#6b7280', fillOpacity: 0.06, dashArray: '10, 8' }} />}
               {monitorPath.length > 1 && <Polygon positions={monitorPath} pathOptions={{ color: 'var(--accent,#b8860b)', weight: 2.5, fillOpacity: 0 }} />}
               {location && <Marker position={[location.lat, location.lng]} icon={isMonitoring ? monitoringIcon : userLocationIcon}>
                 <Popup><div className="text-sm"><strong>Your Location</strong><br />{location.lat.toFixed(4)}, {location.lng.toFixed(4)}<br />Status: {qasrStatus?.status === 'traveler' ? 'Traveler' : qasrStatus?.status === 'resident' ? 'Resident' : 'Unknown'}</div></Popup>
@@ -358,10 +445,11 @@ export default function QasrMap() {
           </div>
           <div className="flex flex-wrap gap-3 mt-2">
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#22c55e', opacity: 0.5 }} /><span>'Urf (Resident Zone)</span></div>
-            <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#6b7280', opacity: 0.4 }} /><span>Hadd (22 km)</span></div>
+            {showHaddZone && <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#8b5cf6', opacity: 0.4 }} /><span>Hadd al-Tarakhkhus ({userHaddKm} km)</span></div>}
+            <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: boundaryType === 'one-way' ? '#f97316' : '#6b7280', opacity: boundaryType === 'one-way' ? 0.5 : 0.4 }} /><span>{boundaryType === 'one-way' ? 'Hadd (44 km)' : 'Hadd (22 km)'}</span></div>
             {boundaryInfo && boundaryInfo.kind !== 'none' && (
               <div className={`px-1.5 py-0.5 rounded-[var(--radius-sm)] text-[11px] font-medium border ${boundaryInfo.kind === 'osm' ? 'bg-[var(--accent-light)] text-[var(--accent)] border-transparent' : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)] border-[var(--border)]'}`} title={`Boundary data source: ${boundaryInfo.kind}`}>
-                {boundaryInfo.kind === 'osm' ? 'OSM built-up' : boundaryInfo.kind === 'generated' ? 'Generated' : 'Approximate'}
+                {boundaryInfo.kind === 'osm' ? 'Legal + built-up · OSM' : boundaryInfo.kind === 'generated' ? 'Generated' : 'Approximate'}
                 {boundaryInfo.areaKm2 ? ` · ${Math.round(boundaryInfo.areaKm2).toLocaleString()} km²` : ''}
               </div>
             )}
@@ -388,6 +476,10 @@ export default function QasrMap() {
                 {qasrStatus.cityName && <div>City: <span className="text-[var(--text-secondary)]">{qasrStatus.cityName}</span></div>}
                 {qasrStatus.distanceKm != null && <div>Distance from boundary: <span className="text-[var(--text-secondary)]">{Math.abs(qasrStatus.distanceKm).toFixed(1)} km</span></div>}
                 <div>Hadd al-Tarakhkhus: <span className="text-[var(--text-secondary)]">{qasrStatus.haddDistance || HADD_AL_TARAKHKHUS_KM} km</span></div>
+                {qasrStatus.detail === 'inside-urf' && <div className="text-[var(--text-secondary)]">Inside the 'Urf boundary ⟶ Resident (Tamam)</div>}
+                {qasrStatus.detail === 'before-hadd' && <div className="text-[var(--text-secondary)]">Left the 'Urf but still within the Hadd al-Tarakhkhus ⟶ Resident</div>}
+                {qasrStatus.detail === 'past-hadd-but-short-journey' && <div className="text-[var(--text-secondary)]">Past the Hadd but the journey is under 8 farsakhs ⟶ Resident</div>}
+                {qasrStatus.detail === 'traveler' && <div className="text-[var(--accent)]">Past the Hadd + journey is 8+ farsakhs ⟶ Traveler (Qasr)</div>}
                 {distanceToHadd != null && <div>To Hadd: <span className={distanceToHadd < 0 ? 'text-[var(--text-secondary)]' : 'text-[var(--accent)]'}>{distanceToHadd < 0 ? `${Math.abs(distanceToHadd).toFixed(1)} km` : `${distanceToHadd.toFixed(1)} km past`}</span></div>}
               </div>
             </div>
@@ -415,7 +507,7 @@ export default function QasrMap() {
           {/* Disclaimer */}
           <div className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-[var(--radius-md)] p-4">
             <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
-              <strong className="text-[var(--text-secondary)]">Important:</strong> The 'Urf boundary is an estimation based on structural density, census data, or OpenStreetMap boundaries. Per Ayatollah Sistani: <em>"The start of the eight farsakhs must be calculated from the point beyond which a person is deemed to be a traveller."</em> This is a guide ΓÇö please use your own judgment and consult a qualified authority.
+              <strong className="text-[var(--text-secondary)]">Important:</strong> The 'Urf boundary starts from the city's legal limits and expands with the continuous built-up area (urban sprawl). Per Ayatollah Sistani: <em>"The start of the eight farsakhs must be calculated from the point beyond which a person is deemed to be a traveller."</em> The Hadd al-Tarakhkhus (visibility/audibility) zone is subjective and shown as the adjustable purple ring; the 22/44 km ring is the 8-farsakh journey measure from the 'Urf outskirts. ΓÇö This is a guide — please use your own judgment and consult a qualified authority.
             </p>
           </div>
 

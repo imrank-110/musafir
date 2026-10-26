@@ -839,140 +839,21 @@ function destinationPoint(lat, lng, distKm, brngDeg) {
   return [φ2 * RAD, wrapLng(λ2 * RAD)];
 }
 
-// ─── Polygon Buffer (True Offset + Radial Fallback) ───────────────────────────
+// ─── Polygon Buffer (Simple Radial Extension) ─────────────────────────────────
 
 /**
  * Outward-buffer a polygon by `offsetKm`.
  *
- * Primary method: per-vertex angle-bisector offset — every edge is moved out by
- * the exact requested distance, so the Hadd ring is a consistent 22/44 km from
- * the jagged 'urf outline in every direction. When the offset would produce a
- * degenerate/self-intersecting ring (very deep, narrow inlets), we fall back to
- * a centroid-radial grow which is always visually stable.
+ * Each boundary vertex is moved directly outward along the ray from the polygon
+ * centroid to that vertex, by the requested distance (e.g. 22 km round-trip or
+ * 44 km one-way). This is the classic "extension from each point of the
+ * boundary" — predictable and stable even on jagged built-up outlines.
  *
  * @param {Array<[number, number]>} polygon - closed [lat, lng] ring (CCW or CW)
  * @param {number} offsetKm - outward distance in km
  * @returns {Array<[number, number]> | null}
  */
 export function bufferPolygon(polygon, offsetKm, origin) {
-  if (!polygon || polygon.length < 3) return null;
-
-  const dM = offsetKm * 1000; // meters
-
-  // Local equirectangular projection (metric, centered on the ring centroid).
-  let sumLat = 0, sumLng = 0;
-  for (const [la, ln] of polygon) { sumLat += la; sumLng += ln; }
-  const cLat = sumLat / polygon.length;
-  const cLng = sumLng / polygon.length;
-  const kmPerDegLat = 111.32;
-  const kmPerDegLng = 111.32 * Math.cos(cLat * DEG);
-  const toXY = (la, ln) => [(ln - cLng) * kmPerDegLng * 1000, (la - cLat) * kmPerDegLat * 1000];
-  const toLL = (x, y) => [y / (kmPerDegLat * 1000) + cLat, x / (kmPerDegLng * 1000) + cLng];
-
-  let pts = polygon.map(([la, ln]) => toXY(la, ln));
-  // Remove consecutive duplicates but keep the ring closed structure.
-  const cleanedArr = [pts[0]];
-  for (let i = 1; i < pts.length; i++) {
-    const p = pts[i];
-    const last = cleanedArr[cleanedArr.length - 1];
-    if (Math.abs(p[0] - last[0]) > 1e-6 || Math.abs(p[1] - last[1]) > 1e-6) cleanedArr.push(p);
-  }
-  if (cleanedArr.length < 3) return null;
-  // Drop the duplicated closing vertex (re-closed at the end).
-  if (cleanedArr.length > 1 &&
-      Math.abs(cleanedArr[0][0] - cleanedArr[cleanedArr.length - 1][0]) < 1e-6 &&
-      Math.abs(cleanedArr[0][1] - cleanedArr[cleanedArr.length - 1][1]) < 1e-6) {
-    cleanedArr.pop();
-  }
-  pts = cleanedArr;
-
-  // Ensure counter-clockwise (outward normals are then (dy, -dx)).
-  let signed = 0;
-  for (let i = 0; i < pts.length; i++) {
-    const [x1, y1] = pts[i];
-    const [x2, y2] = pts[(i + 1) % pts.length];
-    signed += x1 * y2 - x2 * y1;
-  }
-  if (signed && signed < 0) pts.reverse();
-
-  const n = pts.length;
-
-  // Outward unit normals for each edge.
-  const normals = [];
-  for (let i = 0; i < n; i++) {
-    const [x1, y1] = pts[i];
-    const [x2, y2] = pts[(i + 1) % n];
-    let dx = x2 - x1, dy = y2 - y1;
-    const len = Math.hypot(dx, dy);
-    if (len < 1e-9) { normals.push(null); continue; }
-    dx /= len; dy /= len;
-    normals.push([dy, -dx]); // CCW outward
-  }
-
-  const out = [];
-  let clamped = 0;
-  for (let i = 0; i < n; i++) {
-    const [x, y] = pts[i];
-    const ni = normals[i];
-    const nip = normals[(i - 1 + n) % n];
-    if (!ni || !nip) { out.push([x, y]); continue; }
-
-    // Angle bisector of the two adjacent edge normals.
-    let bx = nip[0] + ni[0];
-    let by = nip[1] + ni[1];
-    const blen = Math.hypot(bx, by);
-    if (blen < 1e-9) { bx = ni[0]; by = ni[1]; }
-    else { bx /= blen; by /= blen; }
-
-    // Interior angle at this vertex (from the turn between adjacent edges).
-    const [px, py] = pts[(i - 1 + n) % n];
-    const [nx, ny] = pts[(i + 1) % n];
-    let ux = x - px, uy = y - py;
-    let vx = nx - x, vy = ny - y;
-    const ul = Math.hypot(ux, uy), vl = Math.hypot(vx, vy);
-    if (ul < 1e-9 || vl < 1e-9) { out.push([x, y]); continue; }
-    ux /= ul; uy /= ul; vx /= vl; vy /= vl;
-    const turn = Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy); // left>0 right<0
-    const interiorAngle = Math.PI - turn;
-    const sinHalf = Math.sin(interiorAngle / 2);
-
-    let push = dM / sinHalf;
-    if (!isFinite(push) || Math.abs(push) > dM * 14) {
-      push = dM;
-      clamped++;
-    }
-    out.push([x + bx * push, y + by * push]);
-  }
-
-  if (out.length >= 3 && clamped <= Math.max(2, n * 0.15)) {
-    // Cheap validity: no absurd jumps in segment length.
-    let longest = 0;
-    for (let i = 0; i < out.length; i++) {
-      const [x1, y1] = out[i];
-      const [x2, y2] = out[(i + 1) % out.length];
-      const l = Math.hypot(x2 - x1, y2 - y1);
-      if (l > longest) longest = l;
-    }
-    if (longest < dM * 10) {
-      const result = out.map(([x, y]) => toLL(x, y));
-      const first = result[0];
-      const last = result[result.length - 1];
-      if (Math.abs(first[0] - last[0]) > 0.0001 || Math.abs(first[1] - last[1]) > 0.0001) {
-        result.push([first[0], first[1]]);
-      }
-      return result;
-    }
-  }
-
-  // Fall back to the stable centroid-radial grow.
-  return bufferPolygonRadial(polygon, offsetKm, [cLat, cLng]);
-}
-
-/**
- * Legacy centroid-radial buffer: moves every vertex radially from the centroid.
- * Always produces a simple (star-shaped) ring, so it is a safe fallback.
- */
-function bufferPolygonRadial(polygon, offsetKm, origin) {
   if (!polygon || polygon.length < 3) return null;
 
   let clat = 0, clng = 0;
@@ -1004,6 +885,8 @@ function bufferPolygonRadial(polygon, offsetKm, origin) {
   }
   return result;
 }
+
+// ─── Public API ───────────────────────────────────────────────────────────────
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -1299,6 +1182,7 @@ export function calculateStatusWithHadd(lat, lng, cityName, userHaddKm, journeyF
   if (!city) {
     return { status: "unknown", message: `No boundary data for "${cityName}". Please consult your local Islamic authority.` };
   }
+  const distanceKm = distanceToPolygonBoundary([lat, lng], city.boundary);
   const insideUrf = pointInPolygon([lat, lng], city.boundary);
   if (insideUrf) {
     return {
@@ -1306,13 +1190,16 @@ export function calculateStatusWithHadd(lat, lng, cityName, userHaddKm, journeyF
       message: `You are within the city boundary of ${cityName}. You are a Resident (Hadir). Prayers: Tamam (Full). Fasting: Valid.`,
       detail: "inside-urf",
       cityName,
+      isInsideUrf: true,
+      isBeyondHadd: false,
+      distanceKm,
+      haddDistance: userHaddKm,
     };
   }
   // The Hadd al-Tarakhkhus begins at the edge of the built-up area (the last
   // houses) — i.e., the 'urf boundary. The exact distance to that edge is used
   // for the ruling so it never depends on the shape of the drawn ring.
-  const distToUrf = distanceToPolygonBoundary([lat, lng], city.boundary);
-  const pastHadd = distToUrf >= userHaddKm;
+  const pastHadd = distanceKm >= userHaddKm;
   if (!pastHadd) {
     return {
       status: "resident",
@@ -1320,6 +1207,10 @@ export function calculateStatusWithHadd(lat, lng, cityName, userHaddKm, journeyF
       detail: "before-hadd",
       userHaddKm,
       cityName,
+      isInsideUrf: false,
+      isBeyondHadd: false,
+      distanceKm,
+      haddDistance: userHaddKm,
     };
   }
   if (journeyFarsakhs < 8) {
@@ -1330,6 +1221,10 @@ export function calculateStatusWithHadd(lat, lng, cityName, userHaddKm, journeyF
       userHaddKm,
       journeyFarsakhs,
       cityName,
+      isInsideUrf: false,
+      isBeyondHadd: false,
+      distanceKm,
+      haddDistance: userHaddKm,
     };
   }
   return {
@@ -1339,6 +1234,10 @@ export function calculateStatusWithHadd(lat, lng, cityName, userHaddKm, journeyF
     userHaddKm,
     journeyFarsakhs,
     cityName,
+    isInsideUrf: false,
+    isBeyondHadd: true,
+    distanceKm,
+    haddDistance: userHaddKm,
   };
 }
 

@@ -6,6 +6,6 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
     // The bundled boundary geometry intentionally makes the main chunk large.
-    chunkSizeWarningLimit: 3000,
+    chunkSizeWarningLimit: 6000,
   },
 })

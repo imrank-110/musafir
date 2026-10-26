@@ -50,6 +50,33 @@ ROOT_COPY_PATH = os.path.join(ROOT, "boundaries.json")
 # then tools/merge_boundaries.py combines them.
 OUTPUT_PATH = os.environ.get("URF_OUTPUT") or PUBLIC_PATH
 
+# Legal (administrative) boundaries — the BASE of each city's 'urf boundary.
+LEGAL_PATH = os.path.join(ROOT, "src", "data", "legal-boundaries.json")
+PUBLIC_LEGAL_PATH = os.path.join(ROOT, "public", "legal-boundaries.json")
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_LEGAL_UA = "MusafirUrfBoundaryGenerator/3.0 (legal boundary lookup)"
+
+# The 'urf = legal city limits ∪ continuous built-up sprawl. These knobs say
+# how tightly the sprawl is anchored to the legal boundary.
+LEGAL_ANCHOR_M = 400.0    # buffer the legal boundary so touching sprawl merges
+LEGAL_REACH_M = 2500.0    # keep built-up components within this of the legal city
+
+# Adaptive rule for metro labels: union the named member cities' legal
+# boundaries when they resolve; fall back to built-up-only if none do.
+LEGAL_MEMBERS = {
+    "Dallas-Fort Worth": ["Dallas", "Fort Worth"],
+    "Minneapolis-St Paul": ["Minneapolis", "Saint Paul"],
+    "San Francisco Bay Area": ["San Francisco", "Oakland", "San Jose"],
+    "Tampa Bay": ["Tampa", "St. Petersburg"],
+    "Raleigh-Durham": ["Raleigh", "Durham"],
+    "New York City": ["New York City"],
+    "Washington DC": ["Washington, District of Columbia"],
+    "Kitchener-Waterloo": ["Kitchener"],
+    "Salt Lake City": ["Salt Lake City"],
+    "Oklahoma City": ["Oklahoma City"],
+    "St Louis": ["St. Louis"],
+}
+
 # â”€â”€â”€ Tunable parameters (the 'urf = continuous built-up area) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 BRIDGE_M = 500.0           # gap-bridging radius: connects developments up to
                            # ~2*BRIDGE apart. Calibrated against US suburbs:
@@ -140,6 +167,110 @@ def overpass_query(query):
     raise RuntimeError(f"Overpass query failed for all mirrors: {last_err}")
 
 
+# ─── Legal boundary fetch (Nominatim) ──────────────────────────────────────────
+
+def _nominatim_search(query):
+    url = NOMINATIM_URL + "?" + urllib.parse.urlencode(
+        {"q": query, "format": "jsonv2", "polygon_geojson": 1, "limit": 3}
+    )
+    req = urllib.request.Request(url, headers={"User-Agent": NOMINATIM_LEGAL_UA})
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def geojson_to_rings(geojson):
+    """Yield lat/lng rings (list of [[lat, lng], ...]) from a Polygon/MultiPolygon geojson."""
+    if not geojson:
+        return
+    typ = geojson.get("type")
+    coords = geojson.get("coordinates") or []
+    polys = coords if typ == "MultiPolygon" else ([coords] if typ == "Polygon" else [])
+    for poly in polys:
+        if poly and isinstance(poly[0], list) and len(poly[0]) >= 4:
+            ring = [[p[1], p[0]] for p in poly[0]]  # [lng, lat] -> [lat, lng]
+            if ring and ring[0] != ring[-1]:
+                ring.append([ring[0][0], ring[0][1]])
+            yield ring
+
+
+def fetch_legal_rings(city_name):
+    """Return a list of closed [[lat, lng], ...] rings for the city's legal boundary."""
+    members = LEGAL_MEMBERS.get(city_name, [city_name])
+    _skip_types = {"region", "county", "state", "province", "district", "country"}
+    rings = []
+    for member in members:
+        for attempt in range(2):
+            try:
+                results = _nominatim_search(member)
+                for r in results:
+                    if r.get("addresstype") in _skip_types:
+                        continue  # city-level only, not county/region artefacts
+                    g = r.get("geojson")
+                    if g and g.get("type") in ("Polygon", "MultiPolygon"):
+                        rings.extend(geojson_to_rings(g))
+                    if rings:
+                        break
+                break
+            except Exception:  # noqa: BLE001
+                time.sleep(2.0)
+        time.sleep(1.1)  # Nominatim usage policy: max ~1 req/s
+    return rings
+
+
+def rings_to_polygons(rings, lat0, lon0):
+    """Convert lat/lng legal rings to metric shapely Polygons.
+
+    Rings farther than LEGAL_MAX_RADIUS_KM from the city center are dropped —
+    unqualified Nominatim queries can match look-alike places far away
+    (e.g. "Waterloo" hitting Waterloo, Belgium).
+    """
+    polys = []
+    for ring in rings:
+        if len(ring) < 3:
+            continue
+        clat = sum(p[0] for p in ring) / len(ring)
+        clon = sum(p[1] for p in ring) / len(ring)
+        dlat = (clat - lat0) * DEG2M
+        dlng = (clon - lon0) * DEG2M * max(0.2, math.cos(math.radians(lat0)))
+        if math.hypot(dlat, dlng) > 150000.0:  # > 150 km away -> wrong result
+            continue
+        pts = [to_meters(la, ln, lat0, lon0) for la, ln in ring]
+        if pts and pts[0] == pts[-1]:
+            pts = pts[:-1]
+        if len(pts) < 3:
+            continue
+        try:
+            poly = Polygon(pts)
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            if poly.is_valid and not poly.is_empty and poly.area > 1e6:  # > 1 km²
+                polys.append(poly)
+        except Exception:  # noqa: BLE001
+            continue
+    if not polys:
+        return None
+    merged = unary_union(polys)
+    if isinstance(merged, MultiPolygon):
+        merged = max(merged.geoms, key=lambda g: g.area)
+    return merged
+
+
+def load_legal_cache():
+    for path in (LEGAL_PATH, PUBLIC_LEGAL_PATH):
+        if os.path.exists(path):
+            with io.open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    return {}
+
+
+def save_legal_cache(legal_cache):
+    merged = load_legal_cache()
+    merged.update({k: v for k, v in legal_cache.items() if v is not None})
+    for path in (LEGAL_PATH, PUBLIC_LEGAL_PATH):
+        with io.open(path, "w", encoding="utf-8") as f:
+            json.dump(merged, f, ensure_ascii=False, separators=(",", ":"))
+
+
 def fetch_landuse_polygons(lat0, lon0, radius_m, ways_only=False):
     """Query Overpass and return list of shapely Polygons in local metric coords."""
     radius_km = int(radius_m / 1000)
@@ -181,8 +312,14 @@ def fetch_landuse_polygons(lat0, lon0, radius_m, ways_only=False):
     return polys
 
 
-def build_urf_outline(polys, lat0, lon0):
-    """Merge built-up polygons into one continuous 'urf outline (metric)."""
+def build_urf_outline(polys, lat0, lon0, legal=None):
+    """Merge built-up polygons into one continuous 'urf outline (metric).
+
+    The 'urf = the city's LEGAL boundary (its core) ∪ the continuous built-up
+    sprawl: built-up components that touch or sit within LEGAL_REACH_M of the
+    legal boundary are included; distant satellite fragments are dropped.
+    Without a legal boundary it falls back to the dominant built-up component.
+    """
     if not polys:
         return None
 
@@ -190,17 +327,28 @@ def build_urf_outline(polys, lat0, lon0):
     merged = unary_union([p.buffer(BRIDGE_M, resolution=2) for p in polys])
     merged = merged.buffer(-BRIDGE_M, resolution=2)
 
-    # Keep the dominant contiguous component (drops distant satellite fragments).
-    if isinstance(merged, MultiPolygon):
-        components = sorted(merged.geoms, key=lambda g: g.area, reverse=True)
+    anchor = None
+    if legal is not None and not legal.is_empty:
+        anchor = legal.buffer(LEGAL_REACH_M, resolution=2)
+        outline = merged.union(legal.buffer(LEGAL_ANCHOR_M, resolution=2))
     else:
-        components = [merged]
+        outline = merged
+
+    # Component filtering.
+    if isinstance(outline, MultiPolygon):
+        components = sorted(outline.geoms, key=lambda g: g.area, reverse=True)
+    else:
+        components = [outline]
     if not components:
         return None
     largest = components[0]
 
-    # Drop remaining tiny fragments relative to the largest one.
-    keep = [g for g in components if g.area >= MIN_FRAGMENT_FRAC * largest.area]
+    if anchor is not None:
+        # Keep the legal-anchored parts plus large sprawl components.
+        keep = [g for g in components
+                if g.intersects(anchor) or g.area >= MIN_FRAGMENT_FRAC * largest.area]
+    else:
+        keep = [g for g in components if g.area >= MIN_FRAGMENT_FRAC * largest.area]
     if not keep:
         return None
     outline = keep[0]
@@ -300,6 +448,9 @@ def main():
         idx = args.index("--bridge") + 1
         bridge_override = float(args[idx])
     ways_only = "--ways-only" in args
+    no_legal = "--no-legal" in args
+    refresh_legal = "--refresh-legal" in args
+    legal_only = "--legal-only" in args
 
     global BRIDGE_M
     if bridge_override:
@@ -318,6 +469,7 @@ def main():
             print(f"WARN: '{missing}' are not in the existing data (need a center); skipping.")
 
     results = dict(current)
+    legal_cache = load_legal_cache()
     stats = []
 
     for i, name in enumerate(cities, 1):
@@ -338,13 +490,46 @@ def main():
         if radius_override:
             radius_m = radius_override * 1000
 
+        # Legal boundary: fetch once per city (cached) unless --no-legal.
+        legal_poly = None
+        legal_area = 0.0
+        if not no_legal:
+            legal_entry = legal_cache.get(name) if not refresh_legal else None
+            if not legal_entry or not legal_entry.get("legal"):
+                print(f"[{i}/{len(cities)}] {name}: fetching legal boundary...", end=" ", flush=True)
+                rings = fetch_legal_rings(name)
+                if rings:
+                    legal_entry = {"center": [round(lat0, 6), round(lon0, 6)], "legal": rings[0]}
+                    if len(rings) > 1:
+                        legal_entry["cadditional"] = rings[1:]
+                    print(f"ok ({len(rings)} ring(s));", end=" ", flush=True)
+                else:
+                    legal_entry = None
+                    print("none;", end=" ", flush=True)
+                legal_cache[name] = legal_entry
+                save_legal_cache(legal_cache)
+            if legal_entry and legal_entry.get("legal"):
+                rings = [legal_entry["legal"]] + (legal_entry.get("cadditional") or [])
+                legal_poly = rings_to_polygons(rings, lat0, lon0)
+                if legal_poly is not None:
+                    legal_area = legal_poly.area / 1e6
+
         print(f"[{i}/{len(cities)}] {name}: querying Overpass (r={radius_m/1000:.0f} km)...", end=" ", flush=True)
         try:
-            polys = fetch_landuse_polygons(lat0, lon0, radius_m, ways_only=ways_only)
-            print(f"got {len(polys)} polygons", end="; ", flush=True)
-            outline = build_urf_outline(polys, lat0, lon0)
+            if legal_only:
+                # Legal-only mode: the 'urf starts at the legal boundary.
+                outline = legal_poly
+                print("legal-only", end="; ", flush=True)
+            else:
+                polys = fetch_landuse_polygons(lat0, lon0, radius_m, ways_only=ways_only)
+                print(f"got {len(polys)} polygons", end="; ", flush=True)
+                outline = build_urf_outline(polys, lat0, lon0, legal=legal_poly)
+                if outline is None and legal_poly is not None:
+                    # OSM unavailable for this city — the legal city still defines the 'urf.
+                    outline = legal_poly.simplify(SIMPLIFY_M, preserve_topology=True)
+                    print("(legal fallback)", end="; ", flush=True)
             if outline is None:
-                print("FAILED (merged area below threshold)")
+                print("FAILED (no boundary source)")
                 stats.append((name, "FAILED", old_bound and len(old_bound) or 0, 0))
                 continue
             boundary = polygon_to_latlng(outline, lat0, lon0)
@@ -354,7 +539,8 @@ def main():
             old_area = area_km2_latlng(old_bound, lat0) if old_bound else 0.0
             new_area = area_km2_latlng(boundary, lat0)
             ew, ns = ring_bbox_span_km(boundary, lat0)
-            print(f"OK: {len(boundary)} pts, {new_area:.0f} km2 (was {old_area:.0f}), span {ew:.1f}x{ns:.1f} km")
+            legal_txt = f", legal {legal_area:.0f} km2" if legal_area > 0 else ", no legal"
+            print(f"OK: {len(boundary)} pts, {new_area:.0f} km2 (was {old_area:.0f}), span {ew:.1f}x{ns:.1f} km{legal_txt}")
             stats.append((name, "OK", len(boundary), new_area))
         except Exception as exc:  # noqa: BLE001
             print(f"ERROR: {exc}")
