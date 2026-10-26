@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+﻿import { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Polygon, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Geolocation } from '@capacitor/geolocation';
@@ -6,30 +6,23 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
   calculateQasrStatus,
-  calculateQasrStatusFromOrigin,
-  calculateStatusWithHadd,
   getSupportedCities,
   getUrfBoundary,
   getApproximateBoundary,
   getBoundarySource,
-  getHaddRange,
   generateUrfPolygon,
   generateHaddBoundary,
-  generateOneWayBoundary,
-  generateHaddZonePolygon,
-  generateBoundaryAtDistance,
-  fetchUrfBoundary,
-  loadBoundaries,
   HADD_AL_TARAKHKHUS_KM,
-  ONE_WAY_HADD_KM,
   reverseGeocode,
+  fetchUrfBoundary,
   fetchCityBoundary,
   findCityForLocation,
   saveUserCity,
-  haversineDistance,
+  calculateDistanceToHadd,
+  loadBoundaries,
 } from '../utils/geoUtils';
 
-// ─── Map Icons ────────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Map Icons ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 const userLocationIcon = L.divIcon({
   className: '',
@@ -52,7 +45,7 @@ const cityCenterIcon = L.divIcon({
   iconAnchor: [7, 7],
 });
 
-// ─── Map Controller ──────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Map Controller ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 function MapController({ center, zoom }) {
   const map = useMap();
@@ -64,7 +57,7 @@ function MapController({ center, zoom }) {
   return null;
 }
 
-// ─── Notifications ────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Notifications ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 async function playAlertSound() {
   try { await Haptics.impact({ style: ImpactStyle.Heavy }); } catch {
@@ -100,7 +93,7 @@ async function sendNotification(title, body) {
   }
 }
 
-// ─── Verdict Questionnaire ───────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Verdict Questionnaire ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 function VerdictQuestionnaire({ qasrStatus, onReset }) {
   const [step, setStep] = useState(1);
@@ -143,7 +136,7 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
             </div>
           </div>
           <div className="mt-3 space-y-1">
-            {verdict.details.map((d, i) => <p key={i} className="text-xs text-[var(--text-secondary)] flex gap-1.5"><span className="text-[var(--accent)]">—</span>{d}</p>)}
+            {verdict.details.map((d, i) => <p key={i} className="text-xs text-[var(--text-secondary)] flex gap-1.5"><span className="text-[var(--accent)]">ΓÇö</span>{d}</p>)}
           </div>
         </div>
         <button onClick={() => { setVerdict(null); setStep(1); setStayDuration(''); setHasWatan(null); setPassingThroughWatan(null); onReset?.(); }} className="w-full h-10 mt-4 bg-[var(--bg-secondary)] hover:bg-[var(--border)] text-sm font-semibold text-[var(--text-primary)] rounded-[var(--radius-sm)] transition-colors">Start Over</button>
@@ -193,7 +186,7 @@ function VerdictQuestionnaire({ qasrStatus, onReset }) {
   );
 }
 
-// ─── Main Component ────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Main Component ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 export default function QasrMap() {
   const [location, setLocation] = useState(null);
@@ -203,28 +196,21 @@ export default function QasrMap() {
   const [isLoading, setIsLoading] = useState(false);
   const [showQuestionnaire, setShowQuestionnaire] = useState(false);
   const [detectedCityName, setDetectedCityName] = useState('');
-  const [originCity, setOriginCity] = useState(''); // Journey origin city
-  const [useOrigin, setUseOrigin] = useState(false); // Whether to use origin-based calculation
-  const [boundaryType, setBoundaryType] = useState('round-trip'); // 'round-trip' | 'one-way'
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [haddAlerted, setHaddAlerted] = useState(false);
   const [distanceToHadd, setDistanceToHadd] = useState(null);
   const [monitorPath, setMonitorPath] = useState([]);
-  const [showHaddZone, setShowHaddZone] = useState(true);
-  const [showHaddExplainer, setShowHaddExplainer] = useState(false);
-  const [showCityBoundaryInfo, setShowCityBoundaryInfo] = useState(false);
-  const [showLegacyBoundary, setShowLegacyBoundary] = useState(false);
-  const [userHaddKm, setUserHaddKm] = useState(5);
-  const [journeyFarsakhs, setJourneyFarsakhs] = useState(8);
   const [boundariesLoaded, setBoundariesLoaded] = useState(false);
+  const [showLegacyBoundary, setShowLegacyBoundary] = useState(false);
   const watchIdRef = useRef(null);
   const prevStatusRef = useRef(null);
   const supportedCities = getSupportedCities();
 
   useEffect(() => () => { if (watchIdRef.current !== null) Geolocation.clearWatch({ id: watchIdRef.current }); }, []);
 
-  // Load the bundled built-up ('urf) boundary outlines once on mount.
-  // Also purges stale cached admin boundaries for the official cities.
+  // Load the bundled built-up ('urf) boundary outlines once on mount. The data
+  // is compiled into the bundle, so this resolves immediately and simply removes
+  // any stale cached admin boundaries for the supported cities.
   useEffect(() => {
     let cancelled = false;
     loadBoundaries().then(() => {
@@ -233,35 +219,19 @@ export default function QasrMap() {
     return () => { cancelled = true; };
   }, []);
 
-  // Load saved Hadd from localStorage
-  useEffect(() => {
-    try { const saved = localStorage.getItem('musafir_user_hadd'); if (saved) setUserHaddKm(parseFloat(saved)); } catch {}
-  }, []);
-
-  // Recalc status when Hadd or journey changes
-  useEffect(() => {
-    if (cityName && location) {
-      const s = calculateStatusWithHadd(location.lat, location.lng, cityName, userHaddKm, journeyFarsakhs);
-      setQasrStatus(s);
-    }
-  }, [userHaddKm, journeyFarsakhs, cityName, location]);
-
-  const handleHaddChange = useCallback((newKm) => {
-    setUserHaddKm(newKm);
-    try { localStorage.setItem('musafir_user_hadd', newKm.toString()); } catch {}
-  }, []);
-
   const handlePositionUpdate = useCallback((lat, lng) => {
     setLocation({ lat, lng });
     setMonitorPath(prev => [...prev, [lat, lng]]);
     if (cityName) {
-      const status = calculateStatusWithHadd(lat, lng, cityName, userHaddKm, journeyFarsakhs);
+      const status = calculateQasrStatus(lat, lng, cityName);
       setQasrStatus(status);
-      if (status.status === 'traveler' && !haddAlerted) { setHaddAlerted(true); playAlertSound(); sendNotification('Hadd al-Tarakhkhus Crossed!', "You are now a Traveler (Musafir)."); }
+      const dist = calculateDistanceToHadd(lat, lng, cityName);
+      setDistanceToHadd(dist);
+      if (status.status === 'traveler' && !haddAlerted) { setHaddAlerted(true); playAlertSound(); sendNotification('Hadd al-Tarakhkhus Crossed!', "You are now a Traveler (Musafir). Prayers: Qasr (2 Rak'ahs). Fasting: Invalid (Qada required)."); }
       if (prevStatusRef.current === 'resident' && status.status === 'traveler') setHaddAlerted(false);
       prevStatusRef.current = status.status;
     }
-  }, [cityName, userHaddKm, journeyFarsakhs, haddAlerted]);
+  }, [cityName, haddAlerted]);
 
   const startMonitoring = useCallback(async () => {
     if (!cityName) { setError('Please select a city or use your current location first.'); return; }
@@ -281,43 +251,21 @@ export default function QasrMap() {
 
   async function processLocation(latitude, longitude) {
     setLocation({ lat: latitude, lng: longitude }); setIsLoading(false);
-    const recalc = (city) => {
-      const r = getHaddRange(city);
-      handleHaddChange(r.recommended);
-      return calculateStatusWithHadd(latitude, longitude, city, r.recommended, journeyFarsakhs);
-    };
     const matchedCity = findCityForLocation(latitude, longitude);
-    if (matchedCity) { setCityName(matchedCity); setQasrStatus(recalc(matchedCity)); setError(''); setDetectedCityName(`Snapped to ${matchedCity}`); return; }
+    if (matchedCity) { setCityName(matchedCity); setQasrStatus(calculateQasrStatus(latitude, longitude, matchedCity)); setError(''); setDetectedCityName(`Snapped to ${matchedCity}`); return; }
     try {
       const geoResult = await reverseGeocode(latitude, longitude);
       const reverseCity = geoResult.city;
       if (!reverseCity) { setError('Could not determine your city. Please select one from the dropdown.'); return; }
       const cityData = getUrfBoundary(reverseCity);
-      if (cityData) { setCityName(reverseCity); setQasrStatus(recalc(reverseCity)); setError(''); setDetectedCityName(`Located: ${reverseCity}, ${geoResult.state || ''}`); return; }
+      if (cityData) { setCityName(reverseCity); setQasrStatus(calculateQasrStatus(latitude, longitude, reverseCity)); setError(''); setDetectedCityName(`Located: ${reverseCity}, ${geoResult.state || ''}`); return; }
       setDetectedCityName(`Discovering: ${reverseCity}...`);
-      // Try Overpass API first for a true 'Urf boundary (built-up area)
-      const urfData = await fetchUrfBoundary(reverseCity, geoResult.state || '');
-      if (urfData?.boundary) {
-        saveUserCity(reverseCity, { center: urfData.center, boundary: urfData.boundary });
-        setCityName(reverseCity);
-        setQasrStatus(recalc(reverseCity));
-        setError('');
-        setDetectedCityName(`'Urf boundary generated: ${reverseCity}`);
-      } else {
-        // Fallback: administrative boundary from Nominatim
-        const boundaryData = await fetchCityBoundary(reverseCity, geoResult.state || '');
-        if (boundaryData?.boundary) {
-          saveUserCity(reverseCity, { center: boundaryData.center, boundary: boundaryData.boundary });
-          setCityName(reverseCity);
-          setQasrStatus(recalc(reverseCity));
-          setError('');
-          setDetectedCityName(`New city discovered: ${reverseCity}`);
-        } else {
-          setCityName('');
-          setQasrStatus({ isInsideUrf: null, distanceFromBoundary: null, isOutsideHadd: true, status: 'unknown', message: `No boundary data for "${reverseCity}". You are likely a Traveler. Please consult a qualified Islamic authority.`, cityName: reverseCity, cityCenter: [latitude, longitude] });
-          setDetectedCityName(`Unknown city: ${reverseCity}`);
-        }
-      }
+      // Prefer a real built-up outline; fall back to the administrative boundary.
+      let boundaryData = null;
+      try { boundaryData = await fetchUrfBoundary(reverseCity, geoResult.state || ''); } catch {}
+      if (!boundaryData?.boundary) { boundaryData = await fetchCityBoundary(reverseCity, geoResult.state || ''); }
+      if (boundaryData?.boundary) { saveUserCity(reverseCity, { center: boundaryData.center, boundary: boundaryData.boundary }); setCityName(reverseCity); setQasrStatus(calculateQasrStatus(latitude, longitude, reverseCity)); setError(''); setDetectedCityName(`New city discovered: ${reverseCity}`); }
+      else { setCityName(''); setQasrStatus({ isInsideUrf: null, distanceFromBoundary: null, isOutsideHadd: true, status: 'unknown', message: `No boundary data for "${reverseCity}". You are likely a Traveler. Please consult a qualified Islamic authority.`, cityName: reverseCity, cityCenter: [latitude, longitude] }); setDetectedCityName(`Unknown city: ${reverseCity}`); }
     } catch (e) { setError(`Could not determine location: ${e.message}. Please select a city from the dropdown.`); }
   }
 
@@ -332,44 +280,18 @@ export default function QasrMap() {
     }
   }, []);
 
-  const handleCitySelect = useCallback(async (city) => {
+  const handleCitySelect = useCallback((city) => {
     setCityName(city);
-    let cityData = null;
-    // Prefer the official bundled built-up ('urf) outline — no runtime fetch
-    // needed and it cannot be displaced by a coarse admin boundary.
-    cityData = getUrfBoundary(city);
-    // For cities outside the official bundle, generate a true built-up outline
-    // via Overpass (concave outline), falling back to the admin boundary.
-    if (!cityData) {
-      try {
-        const result = await fetchUrfBoundary(city);
-        if (result && result.boundary) {
-          saveUserCity(city, { center: result.center, boundary: result.boundary });
-          cityData = result;
-        }
-      } catch {}
-    }
-    if (cityData) {
-      setLocation({ lat: cityData.center[0], lng: cityData.center[1] });
-      const r = getHaddRange(city);
-      handleHaddChange(r.recommended);
-      setQasrStatus(calculateStatusWithHadd(cityData.center[0], cityData.center[1], city, r.recommended, journeyFarsakhs));
-      setError('');
-      setDetectedCityName('');
-    }
-  }, [journeyFarsakhs, boundariesLoaded]);
+    const cityData = getUrfBoundary(city);
+    if (cityData) { setLocation({ lat: cityData.center[0], lng: cityData.center[1] }); setQasrStatus(calculateQasrStatus(cityData.center[0], cityData.center[1], city)); setError(''); setDetectedCityName(''); }
+  }, []);
 
   const urfPolygon = cityName ? generateUrfPolygon(cityName) : null;
+  const haddBoundary = cityName ? generateHaddBoundary(cityName) : null;
   const legacyPolygon = (cityName && showLegacyBoundary) ? getApproximateBoundary(cityName) : null;
   const boundaryInfo = cityName ? getBoundarySource(cityName) : null;
-  const haddZonePolygon = (cityName && showHaddZone) ? generateHaddZonePolygon(cityName, userHaddKm) : null;
-  const activeBoundary = cityName
-    ? (boundaryType === 'one-way' ? generateOneWayBoundary(cityName) : generateHaddBoundary(cityName))
-    : null;
-  const haddRange = cityName ? getHaddRange(cityName) : { min: 2, recommended: 5, max: 14 };
-  const activeDistance = boundaryType === 'one-way' ? ONE_WAY_HADD_KM : HADD_AL_TARAKHKHUS_KM;
 
-  // ─── Render ──────────────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Render ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   return (
     <div>
@@ -409,139 +331,8 @@ export default function QasrMap() {
             </select>
           </div>
         </div>
-
-        {/* Journey Origin */}
-        <div className="mt-3 pt-3 border-t border-[var(--border-light)]">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-[var(--text-secondary)]">Journey Origin</span>
-            <button
-              onClick={() => {
-                setUseOrigin(!useOrigin);
-                if (!useOrigin && cityName) setOriginCity(cityName);
-              }}
-              className={`text-xs font-medium px-2.5 py-1 rounded-[var(--radius-sm)] transition-colors ${
-                useOrigin ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)]'
-              }`}
-            >
-              {useOrigin ? 'Using origin' : 'Set origin'}
-            </button>
-          </div>
-          {useOrigin && (
-            <div>
-              <select
-                value={originCity}
-                onChange={e => setOriginCity(e.target.value)}
-                className="w-full h-11 px-3 bg-white border border-[var(--border)] rounded-[var(--radius-sm)] text-sm font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-light)]"
-              >
-                <option value="">Select origin city...</option>
-                {supportedCities.map(city => <option key={city} value={city}>{city}</option>)}
-              </select>
-              <p className="text-[11px] text-[var(--text-tertiary)] mt-1">
-                Status will be calculated based on distance from your origin city.
-              </p>
-            </div>
-          )}
-        </div>
-
         {error && <div className="mt-3 px-3.5 py-2.5 bg-[#fef2f2] border border-[#fecaca] rounded-[var(--radius-sm)] text-sm text-[var(--danger)]">{error}</div>}
       </div>
-
-      {/* Hadd al-Tarakhkhus Controls */}
-      {cityName && (
-      <div className="bg-white border border-[var(--border)] rounded-[var(--radius-lg)] shadow-[var(--shadow-sm)] p-4 mb-4">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Hadd al-Tarakhkhus</h3><button onClick={() => setShowHaddExplainer(!showHaddExplainer)} class="w-7 h-7 rounded-full bg-[var(--bg-secondary)] hover:bg-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center text-xs font-semibold" title="Why this recommendation?">ⓘ</button>
-          <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
-            <input type="checkbox" checked={showHaddZone} onChange={e => setShowHaddZone(e.target.checked)} className="w-3.5 h-3.5 rounded accent-[var(--accent)]" />
-            Show on map
-          </label>
-        </div>
-        <p className="text-[11px] text-[var(--text-tertiary)] mb-2">
-          The Hadd is where city walls are no longer visible or the adhan can no longer be heard. Based on {cityName} (radius ~{Math.round(haddRange.recommended * 1.5)} km),
-          the recommended distance is <strong className="text-[var(--accent)]">{haddRange.recommended} km</strong>. Adjust below per your own judgment.
-        </p>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-[var(--text-tertiary)]">{haddRange.min} km</span>
-          <input
-            type="range"
-            min={haddRange.min}
-            max={haddRange.max}
-            step={0.5}
-            value={userHaddKm}
-            onChange={e => handleHaddChange(parseFloat(e.target.value))}
-            className="w-full h-6 accent-[var(--accent)]"
-          />
-          <span className="text-[10px] text-[var(--text-tertiary)]">{haddRange.max} km</span>
-        </div>
-        <div className="flex items-center justify-between mt-1.5">
-          <span className="text-[11px] text-[var(--text-secondary)]">Your Hadd: <strong class="text-[var(--accent)]">{userHaddKm} km</strong></span>
-          <span className="text-[11px] text-[var(--text-tertiary)]">Recommended: {haddRange.recommended} km</span>
-        </div>
-
-        {showHaddExplainer && (
-        <div className="mt-2 p-3 bg-[var(--bg-secondary)] border border-[var(--border)] rounded-[var(--radius-md)] text-xs text-[var(--text-tertiary)] leading-relaxed slide-up">
-          <p className="font-medium text-[var(--text-secondary)] mb-1">Why {haddRange.recommended} km?</p>
-          <p>The Hadd al-Tarakhkhus is where <strong>city walls are no longer visible</strong> or the <strong>adhan can no longer be heard</strong> (Ayatollah Sistani). Modern cities lack walls and public adhan, so this is inherently <strong>subjective</strong> ? this is a recommendation, not a ruling.</p>
-          {!haddRange.isDefault ? (
-            <p className="mt-1"><strong>{cityName}</strong>’s ‘Urf boundary has an estimated average radius of <strong>{haddRange.radiusKm} km</strong>. Larger metros have taller/denser edge development visible from farther away. Using a horizon-visibility formula (3.2 × √radius), the recommended Hadd is <strong>{haddRange.recommended} km</strong>, with a plausible range of {haddRange.min}–{haddRange.max} km.</p>
-          ) : (
-            <p className="mt-1">This city uses a generic fallback. Adjust the slider to your best judgment.</p>
-          )}
-          <p className="mt-1">Adjust the slider above to where you personally believe the city’s presence is no longer perceptible.</p>
-        </div>
-        )}
-
-        <div className="mt-2.5 pt-2.5 border-t border-[var(--border-light)]">
-          <p className="text-xs font-medium text-[var(--text-secondary)] mb-1.5">Intended journey distance</p>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min="1"
-              max="100"
-              value={journeyFarsakhs}
-              onChange={e => setJourneyFarsakhs(parseInt(e.target.value) || 0)}
-              className="w-16 h-9 px-2 bg-white border border-[var(--border)] rounded-[var(--radius-sm)] text-sm font-medium text-[var(--text-primary)] text-center focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-light)]"
-            />
-            <span className="text-xs text-[var(--text-secondary)]">farsakhs</span>
-            <span className="text-[11px] text-[var(--text-tertiary)]">~{Math.round(journeyFarsakhs * 5.5)} km</span>
-            {journeyFarsakhs < 8 ? (
-              <span className="text-xs text-[var(--text-tertiary)] bg-[var(--bg-secondary)] px-2 py-0.5 rounded-[var(--radius-sm)]">Under 8 — not a traveler</span>
-            ) : (
-              <span className="text-xs text-[var(--accent)] bg-[var(--accent-light)] px-2 py-0.5 rounded-[var(--radius-sm)]">8+ farsakhs — traveler if past Hadd</span>
-            )}
-          </div>
-        </div>
-      </div>
-      )}
-
-      {/* Boundary Type Toggle */}
-      {cityName && (
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-xs font-medium text-[var(--text-secondary)]">Boundary:</span>
-          <div className="flex bg-[var(--bg-secondary)] rounded-[var(--radius-sm)] p-0.5">
-            <button
-              onClick={() => setBoundaryType('round-trip')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-[6px] transition-all ${
-                boundaryType === 'round-trip'
-                  ? 'bg-white text-[var(--text-primary)] shadow-[var(--shadow-sm)]'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              Round-trip (22 km)
-            </button>
-            <button
-              onClick={() => setBoundaryType('one-way')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-[6px] transition-all ${
-                boundaryType === 'one-way'
-                  ? 'bg-white text-[var(--text-primary)] shadow-[var(--shadow-sm)]'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              One-way (44 km)
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Map + Sidebar */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -558,32 +349,7 @@ export default function QasrMap() {
                   interactive={false}
                 />
               )}
-              {haddZonePolygon && (
-                <Polygon
-                  positions={haddZonePolygon}
-                  pathOptions={{
-                    color: '#8b5cf6',
-                    weight: 3,
-                    fillColor: '#8b5cf6',
-                    fillOpacity: 0.08,
-                    dashArray: '8, 6',
-                  }}
-                >
-                  <Popup><div className="text-sm"><strong>Hadd al-Tarakhkhus</strong><br />Your setting: {userHaddKm} km<br /><span className="text-[var(--text-tertiary)]">Where city walls disappear / adhan fades</span></div></Popup>
-                </Polygon>
-              )}
-              {activeBoundary && (
-                <Polygon
-                  positions={activeBoundary}
-                  pathOptions={{
-                    color: boundaryType === 'one-way' ? '#f97316' : '#6b7280',
-                    weight: 3,
-                    fillColor: boundaryType === 'one-way' ? '#f97316' : '#6b7280',
-                    fillOpacity: boundaryType === 'one-way' ? 0.15 : 0.06,
-                    dashArray: boundaryType === 'one-way' ? 'none' : '10, 8',
-                  }}
-                />
-              )}
+              {haddBoundary && <Polygon positions={haddBoundary} pathOptions={{ color: '#6b7280', weight: 3, fillColor: '#6b7280', fillOpacity: 0.06, dashArray: '10, 8' }} />}
               {monitorPath.length > 1 && <Polygon positions={monitorPath} pathOptions={{ color: 'var(--accent,#b8860b)', weight: 2.5, fillOpacity: 0 }} />}
               {location && <Marker position={[location.lat, location.lng]} icon={isMonitoring ? monitoringIcon : userLocationIcon}>
                 <Popup><div className="text-sm"><strong>Your Location</strong><br />{location.lat.toFixed(4)}, {location.lng.toFixed(4)}<br />Status: {qasrStatus?.status === 'traveler' ? 'Traveler' : qasrStatus?.status === 'resident' ? 'Resident' : 'Unknown'}</div></Popup>
@@ -591,7 +357,8 @@ export default function QasrMap() {
             </MapContainer>
           </div>
           <div className="flex flex-wrap gap-3 mt-2">
-            <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#22c55e', opacity: 0.5 }} /><span>City Boundary</span><button onClick={() => setShowCityBoundaryInfo(!showCityBoundaryInfo)} class="w-5 h-5 rounded-full bg-transparent hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center justify-center text-[9px] leading-none" title="About the City Boundary">ℹ</button></div>
+            <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#22c55e', opacity: 0.5 }} /><span>'Urf (Resident Zone)</span></div>
+            <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#6b7280', opacity: 0.4 }} /><span>Hadd (22 km)</span></div>
             {boundaryInfo && boundaryInfo.kind !== 'none' && (
               <div className={`px-1.5 py-0.5 rounded-[var(--radius-sm)] text-[11px] font-medium border ${boundaryInfo.kind === 'osm' ? 'bg-[var(--accent-light)] text-[var(--accent)] border-transparent' : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)] border-[var(--border)]'}`} title={`Boundary data source: ${boundaryInfo.kind}`}>
                 {boundaryInfo.kind === 'osm' ? 'OSM built-up' : boundaryInfo.kind === 'generated' ? 'Generated' : 'Approximate'}
@@ -604,11 +371,6 @@ export default function QasrMap() {
                 {showLegacyBoundary ? 'Old boundary: shown' : 'Compare with old boundary'}
               </button>
             )}
-            {showHaddZone && <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#8b5cf6', opacity: 0.4 }} /><span>Hadd al-Tarakhkhus ({userHaddKm} km)</span></div>}
-            <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
-              <div className="w-3 h-3 rounded" style={{ background: boundaryType === 'one-way' ? '#f97316' : '#6b7280', opacity: boundaryType === 'one-way' ? 0.5 : 0.4 }} />
-              <span>{boundaryType === 'one-way' ? 'One-way (44 km)' : 'Round-trip (22 km)'}</span>
-            </div>
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-2.5 h-2.5 bg-[var(--accent)] rounded-full" /><span>Your Location</span></div>
             {isMonitoring && <div className="flex items-center gap-1.5 text-xs text-[var(--accent)]"><div className="w-2.5 h-2.5 bg-[var(--accent)] rounded-full animate-pulse" /><span>Monitoring</span></div>}
           </div>
@@ -617,45 +379,18 @@ export default function QasrMap() {
         {/* Sidebar */}
         <div className="space-y-3">
           {qasrStatus && (
-            <div className={`bg-white border rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] p-5 ${qasrStatus.status === 'traveler' ? 'border-[var(--accent)]/40' : 'border-[var(--border)]'}`}>
+            <div className={`bg-white border rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] p-5 ${qasrStatus.status === 'traveler' ? 'border-[var(--accent)]/40' : qasrStatus.status === 'resident' ? 'border-[var(--border)]' : 'border-[var(--border)]'}`}>
               <p className={`text-sm font-semibold mb-1 ${qasrStatus.status === 'traveler' ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>
-                {qasrStatus.status === 'traveler' ? 'Traveler (Musafir)' : 'Resident (Hadir)'}
+                {qasrStatus.status === 'traveler' ? 'Traveler' : qasrStatus.status === 'resident' ? 'Resident' : 'Transition Zone'}
               </p>
-              <p className="text-xs text-[var(--text-secondary)] mb-2">{qasrStatus.message}</p>
+              <p className="text-xs text-[var(--text-secondary)] mb-3">{qasrStatus.message}</p>
               <div className="text-xs text-[var(--text-tertiary)] space-y-0.5">
-                {cityName && <div>City: <span className="text-[var(--text-secondary)]">{cityName}</span></div>}
-                {qasrStatus.detail === 'inside-urf' && <div className="text-[var(--text-secondary)]">You are inside the city boundary ⟶ Resident</div>}
-                {qasrStatus.detail === 'before-hadd' && <div className="text-[var(--text-secondary)]">Past city boundary but before Hadd ⟶ Resident</div>}
-                {qasrStatus.detail === 'past-hadd-but-short-journey' && <div className="text-[var(--text-secondary)]">Past Hadd but journey under 8 farsakhs ⟶ Resident</div>}
-                {qasrStatus.detail === 'traveler' && <div className="text-[var(--accent)]">Past Hadd + journey 8+ farsakhs ⟶ Traveler</div>}
-                <div className="mt-1 flex flex-wrap gap-1">
-                  <span className="text-[11px] bg-[var(--bg-secondary)] px-1.5 rounded-[var(--radius-sm)]">'Urf</span>
-                  <span className="text-[11px]">→</span>
-                  <span className="text-[11px] bg-[#8b5cf6]/20 text-[#8b5cf6] px-1.5 rounded-[var(--radius-sm)]">Hadd ({userHaddKm} km)</span>
-                  <span className="text-[11px]">→</span>
-                  <span className="text-[11px] bg-[var(--accent-light)] text-[var(--accent)] px-1.5 rounded-[var(--radius-sm)]">{journeyFarsakhs} farsakhs</span>
-                </div>
+                {qasrStatus.cityName && <div>City: <span className="text-[var(--text-secondary)]">{qasrStatus.cityName}</span></div>}
+                {qasrStatus.distanceKm != null && <div>Distance from boundary: <span className="text-[var(--text-secondary)]">{Math.abs(qasrStatus.distanceKm).toFixed(1)} km</span></div>}
+                <div>Hadd al-Tarakhkhus: <span className="text-[var(--text-secondary)]">{qasrStatus.haddDistance || HADD_AL_TARAKHKHUS_KM} km</span></div>
+                {distanceToHadd != null && <div>To Hadd: <span className={distanceToHadd < 0 ? 'text-[var(--text-secondary)]' : 'text-[var(--accent)]'}>{distanceToHadd < 0 ? `${Math.abs(distanceToHadd).toFixed(1)} km` : `${distanceToHadd.toFixed(1)} km past`}</span></div>}
               </div>
             </div>
-          )}
-
-          {showCityBoundaryInfo && (
-          <div className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-[var(--radius-md)] p-3.5 slide-up">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-xs font-semibold text-[var(--text-primary)]">About the City Boundary</p>
-              <button onClick={() => setShowCityBoundaryInfo(false)} className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors">✕</button>
-            </div>
-            <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
-              The <strong>City Boundary</strong> shows where the continuous built-up residential area ends — the
-              <strong>outskirts of the town</strong> (per Ayatollah Sistani). This is the line from which the
-              8-farsakh (22/44 km) journey distance is measured.
-            </p>
-            <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed mt-0.5">
-              The boundary traces the outer edge of the <strong>actual built-up area</strong> from OpenStreetMap: all
-              residential, commercial and industrial land is merged into one outline and runs along the real contours
-              of streets and housing developments — not administrative city limits and not artificial straight lines.
-            </p>
-          </div>
           )}
 
           {/* Monitor */}
@@ -680,7 +415,7 @@ export default function QasrMap() {
           {/* Disclaimer */}
           <div className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-[var(--radius-md)] p-4">
             <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
-              <strong className="text-[var(--text-secondary)]">Important:</strong> Per Ayatollah Sistani, the Hadd al-Tarakhkhus is where <em>the city walls are no longer visible</em> or <em>the adhan can no longer be heard</em>. In modern cities the measure is subjective and must be determined by the mukallaf. The recommended value (~{userHaddKm} km for this city) is based on typical edge-building-height visibility. The 8-farsakh boundary (~22/44 km) measures the <em>intended journey</em> from the 'Urf outskirts — not the Hadd.
+              <strong className="text-[var(--text-secondary)]">Important:</strong> The 'Urf boundary is an estimation based on structural density, census data, or OpenStreetMap boundaries. Per Ayatollah Sistani: <em>"The start of the eight farsakhs must be calculated from the point beyond which a person is deemed to be a traveller."</em> This is a guide ΓÇö please use your own judgment and consult a qualified authority.
             </p>
           </div>
 
