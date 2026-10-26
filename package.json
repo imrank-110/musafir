@@ -13,7 +13,10 @@
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios",
     "build:android": "npm run build && npx cap copy android && npx cap open android",
-    "build:ios": "npm run build && npx cap copy ios && npx cap open ios"
+    "build:ios": "npm run build && npx cap copy ios && npx cap open ios",
+    "build:boundaries": "python tools/build_urfboundaries.py --all",
+    "validate:boundaries": "node test/validateBoundaries.mjs",
+    "build:boundaries:remaining": "python tools/build_urfboundaries.py --bridge 500 --ways-only --only \"Orlando,Charlotte,Nashville,Memphis,New Orleans,Jacksonville,Phoenix,Denver,Las Vegas,Salt Lake City,Albuquerque,Kansas City,Omaha,Milwaukee,Pittsburgh,Buffalo,Richmond,San Juan,Toronto,Montreal,Vancouver,Calgary,Edmonton,Ottawa,Winnipeg,Quebec City,Hamilton,Halifax,London,Kitchener-Waterloo,San Francisco Bay Area,Tampa Bay,Sacramento,San Jose,Raleigh-Durham\""
   },
   "dependencies": {
     "@capacitor/android": "^8.4.0",

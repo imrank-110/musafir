@@ -1,20 +1,31 @@
+import bundledBoundaries from '../data/city-boundaries.json' with { type: 'json' };
+
 /**
  * geoUtils.js — Geographic Utilities for Qasr Status & 'Urf Boundary
  *
  * Implements Ayatollah Sistani's rulings on traveler boundaries:
- * - 'Urf boundary: where the continuous urban sprawl ends
+ * - 'Urf boundary: where the continuous built-up urban sprawl ends (the last
+ *   houses / outskirts of the town)
  * - Hadd al-Tarakhkhus: 22 km (13.7 miles) outward from the 'Urf boundary
  *
- * For large metropolitan areas, we model the 'Urf boundary using
- * structural density approximations. For new cities, we fetch the
- * administrative boundary from OpenStreetMap (Nominatim) dynamically.
+ * The 'Urf outlines for the supported cities are compiled straight into the
+ * bundle at build time from `src/data/city-boundaries.json` (see
+ * tools/build_urfboundaries.py) — real OSM built-up landuse polygons merged
+ * into a single continuous outline. Because they are part of the JavaScript,
+ * they are guaranteed to be present on the web (any deployment), in the
+ * Capacitor native apps, and in dev — no static-file fetch required.
  *
- * The Hadd al-Tarakhkhus boundary is computed using a centroid-radial
- * Haversine buffer algorithm that preserves shape.
+ * For newly discovered cities, fetchUrfBoundary() queries Overpass for built-up
+ * landuse and traces a concave outline (marching squares) around it — never the
+ * broad administrative boundary, which is only a clearly-marked last resort.
+ *
+ * The Hadd al-Tarakhkhus ring is drawn with an outward polygon offset, and the
+ * ruling itself uses the exact distance from the 'urf edge, so the 8-farsakh
+ * measurement always begins at the true outskirts of the town.
  *
  * === NOMINATIM USAGE POLICY ===
  * We use the free OpenStreetMap Nominatim API for reverse geocoding and
- * boundary fetching. Per Nominatim usage policy:
+ * boundary fallbacks. Per Nominatim usage policy:
  * - Maximum 1 request per second
  * - Provide a reasonable User-Agent header
  * - Cache results aggressively in localStorage
@@ -33,6 +44,56 @@ const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
 const OVERPASS_BASE = 'https://overpass-api.de/api/interpreter';
 const NOMINATIM_USER_AGENT = 'MusafirTravelApp/1.0 (Islamic travel rulings calculator)';
 const CACHE_KEY = 'musafir_user_cities';
+const BOUNDARIES_URL = 'city-boundaries.json';
+
+// Real OSM built-up ('urf) boundaries — bundled into the JS at build time so
+// they are always present in every environment (web, Capacitor, Vercel, dev).
+let loadedBoundaries = bundledBoundaries && Object.keys(bundledBoundaries).length
+  ? bundledBoundaries
+  : null;
+
+/**
+ * Drop any user-cached entry that is now covered by the official bundle.
+ * Older builds cached coarse admin boundaries under the same city names and
+ * those must not shadow the accurate bundled outlines.
+ */
+function purgeCachedOfficialCities() {
+  if (!loadedBoundaries) return;
+  try {
+    const cached = loadUserCities();
+    const keys = Object.keys(cached);
+    let changed = false;
+    for (const k of keys) {
+      if (loadedBoundaries[k]) {
+        delete cached[k];
+        changed = true;
+      }
+    }
+    if (changed) localStorage.setItem(CACHE_KEY, JSON.stringify(cached));
+  } catch (e) {
+    // localStorage unavailable — ignore
+  }
+}
+
+/**
+ * Resolve the real OSM boundary bundle. Because the data is imported into the
+ * module, this resolves immediately; the fetch fallback only matters if a build
+ * somehow shipped without the bundled data.
+ */
+export async function loadBoundaries() {
+  if (loadedBoundaries) {
+    purgeCachedOfficialCities();
+    return loadedBoundaries;
+  }
+  try {
+    const res = await fetch(BOUNDARIES_URL);
+    loadedBoundaries = await res.json();
+  } catch (e) {
+    loadedBoundaries = {};
+  }
+  purgeCachedOfficialCities();
+  return loadedBoundaries;
+}
 
 // ─── Caching Layer ───────────────────────────────────────────────────────────
 
@@ -778,9 +839,140 @@ function destinationPoint(lat, lng, distKm, brngDeg) {
   return [φ2 * RAD, wrapLng(λ2 * RAD)];
 }
 
-// ─── Polygon Buffer Algorithm (Centroid-Radial Haversine) ─────────────────────
+// ─── Polygon Buffer (True Offset + Radial Fallback) ───────────────────────────
 
+/**
+ * Outward-buffer a polygon by `offsetKm`.
+ *
+ * Primary method: per-vertex angle-bisector offset — every edge is moved out by
+ * the exact requested distance, so the Hadd ring is a consistent 22/44 km from
+ * the jagged 'urf outline in every direction. When the offset would produce a
+ * degenerate/self-intersecting ring (very deep, narrow inlets), we fall back to
+ * a centroid-radial grow which is always visually stable.
+ *
+ * @param {Array<[number, number]>} polygon - closed [lat, lng] ring (CCW or CW)
+ * @param {number} offsetKm - outward distance in km
+ * @returns {Array<[number, number]> | null}
+ */
 export function bufferPolygon(polygon, offsetKm, origin) {
+  if (!polygon || polygon.length < 3) return null;
+
+  const dM = offsetKm * 1000; // meters
+
+  // Local equirectangular projection (metric, centered on the ring centroid).
+  let sumLat = 0, sumLng = 0;
+  for (const [la, ln] of polygon) { sumLat += la; sumLng += ln; }
+  const cLat = sumLat / polygon.length;
+  const cLng = sumLng / polygon.length;
+  const kmPerDegLat = 111.32;
+  const kmPerDegLng = 111.32 * Math.cos(cLat * DEG);
+  const toXY = (la, ln) => [(ln - cLng) * kmPerDegLng * 1000, (la - cLat) * kmPerDegLat * 1000];
+  const toLL = (x, y) => [y / (kmPerDegLat * 1000) + cLat, x / (kmPerDegLng * 1000) + cLng];
+
+  let pts = polygon.map(([la, ln]) => toXY(la, ln));
+  // Remove consecutive duplicates but keep the ring closed structure.
+  const cleanedArr = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i];
+    const last = cleanedArr[cleanedArr.length - 1];
+    if (Math.abs(p[0] - last[0]) > 1e-6 || Math.abs(p[1] - last[1]) > 1e-6) cleanedArr.push(p);
+  }
+  if (cleanedArr.length < 3) return null;
+  // Drop the duplicated closing vertex (re-closed at the end).
+  if (cleanedArr.length > 1 &&
+      Math.abs(cleanedArr[0][0] - cleanedArr[cleanedArr.length - 1][0]) < 1e-6 &&
+      Math.abs(cleanedArr[0][1] - cleanedArr[cleanedArr.length - 1][1]) < 1e-6) {
+    cleanedArr.pop();
+  }
+  pts = cleanedArr;
+
+  // Ensure counter-clockwise (outward normals are then (dy, -dx)).
+  let signed = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[(i + 1) % pts.length];
+    signed += x1 * y2 - x2 * y1;
+  }
+  if (signed && signed < 0) pts.reverse();
+
+  const n = pts.length;
+
+  // Outward unit normals for each edge.
+  const normals = [];
+  for (let i = 0; i < n; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[(i + 1) % n];
+    let dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-9) { normals.push(null); continue; }
+    dx /= len; dy /= len;
+    normals.push([dy, -dx]); // CCW outward
+  }
+
+  const out = [];
+  let clamped = 0;
+  for (let i = 0; i < n; i++) {
+    const [x, y] = pts[i];
+    const ni = normals[i];
+    const nip = normals[(i - 1 + n) % n];
+    if (!ni || !nip) { out.push([x, y]); continue; }
+
+    // Angle bisector of the two adjacent edge normals.
+    let bx = nip[0] + ni[0];
+    let by = nip[1] + ni[1];
+    const blen = Math.hypot(bx, by);
+    if (blen < 1e-9) { bx = ni[0]; by = ni[1]; }
+    else { bx /= blen; by /= blen; }
+
+    // Interior angle at this vertex (from the turn between adjacent edges).
+    const [px, py] = pts[(i - 1 + n) % n];
+    const [nx, ny] = pts[(i + 1) % n];
+    let ux = x - px, uy = y - py;
+    let vx = nx - x, vy = ny - y;
+    const ul = Math.hypot(ux, uy), vl = Math.hypot(vx, vy);
+    if (ul < 1e-9 || vl < 1e-9) { out.push([x, y]); continue; }
+    ux /= ul; uy /= ul; vx /= vl; vy /= vl;
+    const turn = Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy); // left>0 right<0
+    const interiorAngle = Math.PI - turn;
+    const sinHalf = Math.sin(interiorAngle / 2);
+
+    let push = dM / sinHalf;
+    if (!isFinite(push) || Math.abs(push) > dM * 14) {
+      push = dM;
+      clamped++;
+    }
+    out.push([x + bx * push, y + by * push]);
+  }
+
+  if (out.length >= 3 && clamped <= Math.max(2, n * 0.15)) {
+    // Cheap validity: no absurd jumps in segment length.
+    let longest = 0;
+    for (let i = 0; i < out.length; i++) {
+      const [x1, y1] = out[i];
+      const [x2, y2] = out[(i + 1) % out.length];
+      const l = Math.hypot(x2 - x1, y2 - y1);
+      if (l > longest) longest = l;
+    }
+    if (longest < dM * 10) {
+      const result = out.map(([x, y]) => toLL(x, y));
+      const first = result[0];
+      const last = result[result.length - 1];
+      if (Math.abs(first[0] - last[0]) > 0.0001 || Math.abs(first[1] - last[1]) > 0.0001) {
+        result.push([first[0], first[1]]);
+      }
+      return result;
+    }
+  }
+
+  // Fall back to the stable centroid-radial grow.
+  return bufferPolygonRadial(polygon, offsetKm, [cLat, cLng]);
+}
+
+/**
+ * Legacy centroid-radial buffer: moves every vertex radially from the centroid.
+ * Always produces a simple (star-shaped) ring, so it is a safe fallback.
+ */
+function bufferPolygonRadial(polygon, offsetKm, origin) {
   if (!polygon || polygon.length < 3) return null;
 
   let clat = 0, clng = 0;
@@ -816,21 +1008,79 @@ export function bufferPolygon(polygon, offsetKm, origin) {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Get the 'Urf boundary for a city (including user-contributed cached cities).
+ * Get the 'Urf boundary for a city.
+ *
+ * Priority:
+ *   1. Real built-up OSM outline from the bundled asset (city-boundaries.json)
+ *   2. User-contributed / auto-discovered cities (only when the city is not
+ *      part of the official bundle — so a stale cached entry can never shadow
+ *      an accurate bundled outline)
+ *   3. Hand-tuned approximations (last resort, e.g. before the bundle has
+ *      loaded, or when the city has no OSM coverage)
  */
 export function getUrfBoundary(cityName) {
-  if (URBAN_BOUNDARIES[cityName]) return URBAN_BOUNDARIES[cityName];
+  if (loadedBoundaries && loadedBoundaries[cityName]) return loadedBoundaries[cityName];
   const userCities = loadUserCities();
-  if (userCities[cityName]) return userCities[cityName];
+  if (userCities[cityName] && !URBAN_BOUNDARIES[cityName]) return userCities[cityName];
+  if (URBAN_BOUNDARIES[cityName]) return URBAN_BOUNDARIES[cityName];
   return null;
 }
 
 /**
- * Get all supported cities (built-in + user-contributed from cache).
+ * Get all supported cities (official bundle + user-contributed from cache).
  */
 export function getSupportedCities() {
+  const official = loadedBoundaries
+    ? Object.keys(loadedBoundaries)
+    : Object.keys(URBAN_BOUNDARIES);
   const userCities = loadUserCities();
-  return [...Object.keys(URBAN_BOUNDARIES), ...Object.keys(userCities)];
+  const extra = Object.keys(userCities).filter(c => !official.includes(c));
+  return [...official, ...extra];
+}
+
+/**
+ * The legacy hand-drawn approximations (the old octagon shapes), used only for
+ * the "compare with old boundary" overlay so users can see what changed.
+ */
+export function getApproximateBoundary(cityName) {
+  const city = URBAN_BOUNDARIES[cityName];
+  return city && city.boundary ? city.boundary : null;
+}
+
+/**
+ * Describe where a city's boundary data comes from and its rough area — shown
+ * as a small on-map chip so it is always obvious which data is live
+ * (osm = bundled built-up outline, generated = runtime Overpass outline,
+ *  approx = legacy octagon, none = no data).
+ */
+export function getBoundarySource(cityName) {
+  let kind = 'none';
+  let data = null;
+  if (loadedBoundaries && loadedBoundaries[cityName]) {
+    kind = 'osm';
+    data = loadedBoundaries[cityName];
+  } else {
+    const cached = loadUserCities();
+    if (cached[cityName]) {
+      kind = 'generated';
+      data = cached[cityName];
+    } else if (URBAN_BOUNDARIES[cityName]) {
+      kind = 'approx';
+      data = URBAN_BOUNDARIES[cityName];
+    }
+  }
+  if (!data || !data.boundary || data.boundary.length < 3) {
+    return { kind, areaKm2: null, vertices: 0 };
+  }
+  const b = data.boundary;
+  let s = 0;
+  for (let i = 0; i < b.length - 1; i++) {
+    s += b[i][0] * b[i + 1][1] - b[i + 1][0] * b[i][1];
+  }
+  const lats = b.map(p => p[0]);
+  const lat = (Math.min(...lats) + Math.max(...lats)) / 2;
+  const areaKm2 = Math.abs(s / 2) * 111.32 * 111.32 * Math.cos(lat * Math.PI / 180);
+  return { kind, areaKm2, vertices: b.length };
 }
 
 /**
@@ -921,23 +1171,10 @@ export function calculateDistanceToHadd(lat, lng, cityName) {
   const city = getUrfBoundary(cityName);
   if (!city) return null;
 
-  const haddPolygon = generateHaddBoundary(cityName);
-  if (haddPolygon && haddPolygon.length >= 3) {
-    const insideHadd = pointInPolygon([lat, lng], haddPolygon);
-    const distToHadd = distanceToPolygonBoundary([lat, lng], haddPolygon);
-    return insideHadd ? -distToHadd : distToHadd;
-  }
-
-  // Fallback: circle-based
-  let maxDist = 0;
-  for (let i = 0; i < city.boundary.length; i++) {
-    const [blat, blng] = city.boundary[i];
-    const dist = haversineDistance(city.center[0], city.center[1], blat, blng);
-    if (dist > maxDist) maxDist = dist;
-  }
-  const haddRadius = maxDist + HADD_AL_TARAKHKHUS_KM;
-  const pointDist = haversineDistance(city.center[0], city.center[1], lat, lng);
-  return pointDist - haddRadius;
+  // Exact distance from the edge of the built-up area (the 'urf line) to the
+  // 22 km Hadd al-Tarakhkhus ring. Negative = still within the hadd zone,
+  // positive = beyond it (traveler once 8 farsakhs are also met).
+  return distanceToPolygonBoundary([lat, lng], city.boundary) - HADD_AL_TARAKHKHUS_KM;
 }
 
 /**
@@ -990,19 +1227,8 @@ function isBeyondHadd(lat, lng, cityName, boundaryType) {
   const city = getUrfBoundary(cityName);
   if (!city) return false;
   const distance = boundaryType === 'one-way' ? ONE_WAY_HADD_KM : HADD_AL_TARAKHKHUS_KM;
-  const boundaryPolygon = generateBoundaryAtDistance(cityName, distance);
-  if (boundaryPolygon && boundaryPolygon.length >= 3) {
-    return !pointInPolygon([lat, lng], boundaryPolygon);
-  }
-  let maxDist = 0;
-  for (let i = 0; i < city.boundary.length; i++) {
-    const [blat, blng] = city.boundary[i];
-    const dist = haversineDistance(city.center[0], city.center[1], blat, blng);
-    if (dist > maxDist) maxDist = dist;
-  }
-  const haddRadius = maxDist + distance;
-  const pointDist = haversineDistance(city.center[0], city.center[1], lat, lng);
-  return pointDist > haddRadius;
+  // Exact: the hadd is measured from the edge of the built-up area.
+  return distanceToPolygonBoundary([lat, lng], city.boundary) >= distance;
 }
 
 function generateRadiusCircle(centerLat, centerLng, radiusKm, numPoints = 64) {
@@ -1082,11 +1308,11 @@ export function calculateStatusWithHadd(lat, lng, cityName, userHaddKm, journeyF
       cityName,
     };
   }
-  const haddPolygon = generateHaddZonePolygon(cityName, userHaddKm);
-  let pastHadd = false;
-  if (haddPolygon && haddPolygon.length >= 3) {
-    pastHadd = !pointInPolygon([lat, lng], haddPolygon);
-  }
+  // The Hadd al-Tarakhkhus begins at the edge of the built-up area (the last
+  // houses) — i.e., the 'urf boundary. The exact distance to that edge is used
+  // for the ruling so it never depends on the shape of the drawn ring.
+  const distToUrf = distanceToPolygonBoundary([lat, lng], city.boundary);
+  const pastHadd = distToUrf >= userHaddKm;
   if (!pastHadd) {
     return {
       status: "resident",
@@ -1128,37 +1354,365 @@ export function calculateStatusWithHadd(lat, lng, cityName, userHaddKm, journeyF
  * @param {string} state - Optional state for disambiguation
  * @returns {Promise<{center: [number, number], boundary: [number, number][]} | null>}
  */
-export async function fetchUrfBoundary(cityName, state) { return fetchCityBoundary(cityName, state); }function convexHull(points) {
-  if (points.length < 3) return null;
-
-  // Sort by lat then lng
-  const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-
-  const lower = [];
-  for (let i = 0; i < sorted.length; i++) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], sorted[i]) <= 0) {
-      lower.pop();
-    }
-    lower.push(sorted[i]);
+export async function fetchUrfBoundary(cityName, state) {
+  // Bundled built-up outline already exists — never re-query for it.
+  const known = getUrfBoundary(cityName);
+  if (known && known.boundary) return known;
+  // Resolve a center: prefer the known city center, else ask Nominatim.
+  let center = known && known.center;
+  if (!center) {
+    const viaNominatim = await fetchCityBoundary(cityName, state);
+    if (viaNominatim) center = viaNominatim.center;
   }
-
-  const upper = [];
-  for (let i = sorted.length - 1; i >= 0; i--) {
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], sorted[i]) <= 0) {
-      upper.pop();
-    }
-    upper.push(sorted[i]);
-  }
-
-  // Remove last point of each list (it's repeated as first of the other)
-  lower.pop();
-  upper.pop();
-
-  return [...lower, ...upper];
+  if (!center) return null;
+  return buildUrfBoundaryFromOverpass(center[0], center[1], cityName);
 }
 
-function cross(o, a, b) {
-  return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.osm.ch/api/interpreter',
+];
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchOverpassJSON(query) {
+  const body = `data=${encodeURIComponent(query)}`;
+  let lastErr = null;
+  for (const base of OVERPASS_MIRRORS) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res = await fetch(base, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        lastErr = err;
+        // CORS/network TypeError is not transient — move to the next mirror
+        // immediately instead of backing off on the same one.
+        if (err instanceof TypeError) break;
+        await sleep(1200 * attempt);
+      }
+    }
+  }
+  throw lastErr || new Error('Overpass unreachable');
+}
+
+/**
+ * Query Overpass for built-up landuse polygons around a city center and trace
+ * a concave outline around them — the true 'urf boundary (the edge of the
+ * continuous built-up area / the last houses).
+ *
+ * Falls back to the Nominatim administrative boundary (or a circle) when
+ * Overpass is unavailable.
+ */
+async function buildUrfBoundaryFromOverpass(lat, lng, cityName) {
+  const overpassQuery = `
+    [out:json][timeout:40];
+    (
+      way["landuse"~"residential|commercial|industrial|retail|mixed"](around:40000,${lat},${lng});
+      relation["landuse"~"residential|commercial|industrial|retail|mixed"](around:40000,${lat},${lng});
+    );
+    out geom;`;
+
+  const points = [];
+  try {
+    const data = await fetchOverpassJSON(overpassQuery);
+    for (const el of data.elements || []) {
+      const geom = el.geometry;
+      if (geom && geom.length >= 4) {
+        for (const node of geom) points.push([node.lat, node.lon]);
+      }
+    }
+  } catch (e) {
+    console.log(`[OVERPASS] Failed for ${cityName}: ${e.message}; falling back to admin boundary`);
+    const admin = await fetchCityBoundary(cityName);
+    if (admin) return admin;
+    return null;
+  }
+
+  if (points.length < 15) {
+    // Not enough built-up data — too small/under-mapped: use a circle approximation
+    return { center: [lat, lng], boundary: generateApproximateBoundary(lat, lng, 15) };
+  }
+
+  const outline = buildConcaveOutline(points, [lat, lng]);
+  if (!outline || outline.length < 4) {
+    return { center: [lat, lng], boundary: generateApproximateBoundary(lat, lng, 15) };
+  }
+  return { center: [lat, lng], boundary: outline };
+}
+
+// ─── Concave Outline (marching-squares alpha shape) ─────────────────────────
+//
+// Rasterizes the built-up points on a local metric grid (~250 m cells), pads
+// each point by ~150 m (so adjacent subdivisions connect), traces the contour
+// with Marching Squares and keeps the largest closed loop — a jagged, natural
+// border that follows how houses actually spread out (no convex-hull straight
+// lines, no enclosing of empty farmland).
+
+// ─── Concave Outline (marching-squares) implementation ───────────────────────
+
+const OUTLINE_CELL_M = 250;    // grid resolution
+const OUTLINE_BUFFER_M = 150;  // padding around each point (join adjacent blocks)
+
+/**
+ * Build a concave "built-up" outline from raw OSM landuse points.
+ *
+ * @param {Array<[number, number]>} points - [lat, lng] vertices of landuse polygons
+ * @param {[number, number]} center - city center [lat, lng]
+ * @returns {Array<[number, number]> | null} closed outline ring, or null
+ */
+export function buildConcaveOutline(points, center) {
+  const [cLat, cLng] = center;
+  const kmPerDegLat = 111.32;
+  const kmPerDegLng = 111.32 * Math.cos((cLat * Math.PI) / 180);
+  const toX = (lng) => (lng - cLng) * kmPerDegLng * 1000;
+  const toY = (lat) => (lat - cLat) * kmPerDegLat * 1000;
+
+  // 1. Project points to local metric space and find the enclosing bounds.
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const pts = [];
+  for (const [la, ln] of points) {
+    const x = toX(ln);
+    const y = toY(la);
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+    pts.push([x, y]);
+  }
+  if (pts.length < 10) return null;
+
+  const margin = OUTLINE_BUFFER_M * 12;
+  const originX = minX - margin;
+  const originY = minY - margin;
+  const w = maxX - minX + margin * 2;
+  const h = maxY - minY + margin * 2;
+  const cols = Math.ceil(w / OUTLINE_CELL_M) + 3;
+  const rows = Math.ceil(h / OUTLINE_CELL_M) + 3;
+  if (cols * rows > 2500000) return null; // sanity cap (¼-cell ≈ 250 m)
+
+  // 2. Rasterize: mark cells within the buffer radius of any point.
+  const grid = new Uint8Array(cols * rows);
+  const bufCells = Math.ceil(OUTLINE_BUFFER_M / OUTLINE_CELL_M);
+  const bufM2 = OUTLINE_BUFFER_M * OUTLINE_BUFFER_M;
+  const gridAt = (cx, cy) => grid[cy * cols + cx];
+  const set = (cx, cy) => { grid[cy * cols + cx] = 1; };
+
+  for (const [x, y] of pts) {
+    const cx0 = Math.floor((x - originX) / OUTLINE_CELL_M);
+    const cy0 = Math.floor((y - originY) / OUTLINE_CELL_M);
+    for (let dy = -bufCells; dy <= bufCells; dy++) {
+      for (let dx = -bufCells; dx <= bufCells; dx++) {
+        const cx = cx0 + dx;
+        const cy = cy0 + dy;
+        if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) continue;
+        if (gridAt(cx, cy)) continue;
+        const px = (cx + 0.5) * OUTLINE_CELL_M + originX - x;
+        const py = (cy + 0.5) * OUTLINE_CELL_M + originY - y;
+        if (px * px + py * py <= bufM2) set(cx, cy);
+      }
+    }
+  }
+
+  // 3. Trace the iso-contour at 0.5 using marching squares.
+  const segments = marchingSquares(grid, cols, rows, originX, originY);
+
+  // 4. Chain segments into closed loops; keep the largest-area loop.
+  const loops = chainSegments(segments);
+  if (!loops.length) return null;
+  let best = null;
+  let bestArea = 0;
+  for (const loop of loops) {
+    const ar = Math.abs(ringArea(loop));
+    if (ar > bestArea) {
+      bestArea = ar;
+      best = loop;
+    }
+  }
+  if (!best || best.length < 4) return null;
+
+  // 5. Convert metric -> lat/lng, simplify, close ring.
+  const ring = best.map(([x, y]) => [toLat(y), toLng(x)]);
+  const simplified = simplifyPolyline(ring, 0.0012); // ~120 m
+  if (simplified.length < 4) return null;
+  const first = simplified[0];
+  const last = simplified[simplified.length - 1];
+  if (Math.abs(first[0] - last[0]) > 1e-7 || Math.abs(first[1] - last[1]) > 1e-7) {
+    simplified.push([first[0], first[1]]);
+  }
+  return simplified;
+
+  function toLat(y) { return y / (kmPerDegLat * 1000) + cLat; }
+  function toLng(x) { return x / (kmPerDegLng * 1000) + cLng; }
+}
+
+/**
+ * Marching squares over a binary grid. Returns segments in metric coordinates.
+ */
+function segmentPusher(segments, mids, edges, gx, gy, i, j) {
+  const a = mids[edges[i]];
+  const b = mids[edges[j]];
+  segments.push([a(gx, gy), b(gx, gy)]);
+}
+
+function marchingSquares(grid, cols, rows, minX, minY) {
+  const segments = [];
+  const at = (cx, cy) => (cx < 0 || cy < 0 || cx > cols || cy > rows ? 0 : grid[cy * cols + cx]);
+
+  // Cell corners: a=tl, b=tr, c=br, d=bl. Bitmask = a + 2b + 4c + 8d.
+  // Midpoints of each cell edge (in metric coordinates).
+  const midT = (gx, gy) => [minX + gx * OUTLINE_CELL_M + OUTLINE_CELL_M / 2, minY + (gy + 1) * OUTLINE_CELL_M];
+  const midB = (gx, gy) => [minX + gx * OUTLINE_CELL_M + OUTLINE_CELL_M / 2, minY + gy * OUTLINE_CELL_M];
+  const midL = (gx, gy) => [minX + gx * OUTLINE_CELL_M, minY + gy * OUTLINE_CELL_M + OUTLINE_CELL_M / 2];
+  const midR = (gx, gy) => [minX + (gx + 1) * OUTLINE_CELL_M, minY + gy * OUTLINE_CELL_M + OUTLINE_CELL_M / 2];
+  const mids = { T: midT, B: midB, L: midL, R: midR };
+
+  const table = {
+    1: ['L', 'T'], 2: ['T', 'R'], 3: ['L', 'R'], 4: ['R', 'B'],
+    5: ['T', 'R', 'B', 'L'], 6: ['T', 'B'], 7: ['L', 'B'],
+    8: ['B', 'L'], 9: ['T', 'B'], 10: ['T', 'L', 'B', 'R'],
+    11: ['R', 'B'], 12: ['R', 'L'], 13: ['T', 'R'], 14: ['T', 'L'],
+    15: [],
+  };
+
+  for (let gy = 0; gy < rows - 1; gy++) {
+    for (let gx = 0; gx < cols - 1; gx++) {
+      const a = at(gx, gy + 1) ? 1 : 0;
+      const b = at(gx + 1, gy + 1) ? 2 : 0;
+      const c = at(gx + 1, gy) ? 4 : 0;
+      const d = at(gx, gy) ? 8 : 0;
+      const mask = a + b + c + d;
+      const edges = table[mask];
+      if (!edges || edges.length === 0) continue;
+      if (edges.length === 2) {
+        segmentPusher(segments, mids, edges, gx, gy, 0, 1);
+      } else {
+        // ambiguous saddle: connect the two outer pairs
+        segmentPusher(segments, mids, edges, gx, gy, 0, 1);
+        segmentPusher(segments, mids, edges, gx, gy, 2, 3);
+      }
+    }
+  }
+  return segments;
+}
+
+/** Chain line segments into closed loops; returns loops with >= 4 points. */
+function chainSegments(segments) {
+  if (!segments.length) return [];
+  const key = (x, y) => `${Math.round(x / 10)},${Math.round(y / 10)}`;
+  const startMap = new Map(); // pointKey -> list of [segIndex, pointIndex]
+  for (let i = 0; i < segments.length; i++) {
+    const [p1, p2] = segments[i];
+    const k1 = key(p1[0], p1[1]);
+    const k2 = key(p2[0], p2[1]);
+    if (!startMap.has(k1)) startMap.set(k1, []);
+    if (!startMap.has(k2)) startMap.set(k2, []);
+    startMap.get(k1).push([i, 0]);
+    startMap.get(k2).push([i, 1]);
+  }
+
+  const used = new Array(segments.length).fill(false);
+  const loops = [];
+  for (let i = 0; i < segments.length; i++) {
+    if (used[i]) continue;
+    used[i] = true;
+    const [p1, p2] = segments[i];
+    const loop = [p1, p2];
+    let ok = true;
+    let guard = 0;
+    while (true) {
+      if (++guard > segments.length + 5) { ok = false; break; }
+      const tail = loop[loop.length - 1];
+      const tk = key(tail[0], tail[1]);
+      const candidates = startMap.get(tk) || [];
+      let next = null;
+      for (const [si, pi] of candidates) {
+        if (used[si]) continue;
+        next = [si, pi];
+        break;
+      }
+      if (!next) { ok = false; break; }
+      used[next[0]] = true;
+      const segStart = segments[next[0]][1 - next[1]]; // the advancing far end
+      loop.push(segStart);
+      // The ring is closed when the advancing end returns to the start point.
+      if (key(segStart[0], segStart[1]) === key(loop[0][0], loop[0][1])) break;
+    }
+    const headKey = key(loop[0][0], loop[0][1]);
+    const tailKey = key(loop[loop.length - 1][0], loop[loop.length - 1][1]);
+    if (!ok || headKey !== tailKey) continue;
+    // dedupe adjacent duplicates and keep only real polygons
+    const deduped = [];
+    for (const [x, y] of loop) {
+      const last = deduped[deduped.length - 1];
+      if (!last || Math.abs(last[0] - x) > 1e-6 || Math.abs(last[1] - y) > 1e-6) {
+        deduped.push([x, y]);
+      }
+    }
+    if (deduped.length >= 4) loops.push(deduped);
+  }
+  return loops;
+}
+
+/** Shoelace ring area in local metric (grid) coordinates. */
+function ringArea(loop) {
+  let a = 0;
+  for (let i = 0; i < loop.length - 1; i++) {
+    a += loop[i][0] * loop[i + 1][1] - loop[i + 1][0] * loop[i][1];
+  }
+  return a / 2;
+}
+
+/** Douglas–Peucker polyline simplification (tolerance in same units as points). */
+function simplifyPolyline(points, tolerance) {
+  if (points.length <= 2) return points.slice();
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+  const stack = [[0, points.length - 1]];
+  const tol2 = tolerance * tolerance;
+  while (stack.length) {
+    const [i0, i2] = stack.pop();
+    let maxDist = 0;
+    let idx = -1;
+    for (let i = i0 + 1; i < i2; i++) {
+      const d = pointSegDist2(points[i], points[i0], points[i2]);
+      if (d > maxDist) {
+        maxDist = d;
+        idx = i;
+      }
+    }
+    if (maxDist > tol2 && idx !== -1) {
+      keep[idx] = 1;
+      stack.push([i0, idx]);
+      stack.push([idx, i2]);
+    }
+  }
+  return points.filter((_, i) => keep[i]);
+}
+
+function pointSegDist2(p, a, b) {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) {
+    const d0 = p[0] - a[0];
+    const d1 = p[1] - a[1];
+    return d0 * d0 + d1 * d1;
+  }
+  let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  const px = a[0] + t * dx - p[0];
+  const py = a[1] + t * dy - p[1];
+  return px * px + py * py;
 }
 
 // ─── Origin-Based Status Calculation ──────────────────────────────────────────
@@ -1192,22 +1746,9 @@ export function calculateQasrStatusFromOrigin(currentLat, currentLng, originCity
   // Check if still inside the origin's 'Urf boundary
   const insideUrf = pointInPolygon([currentLat, currentLng], city.boundary);
 
-  // Check if beyond the Hadd boundary from origin
-  const haddPolygon = generateBoundaryAtDistance(originCityName, distance);
-  let beyondHadd = false;
-  if (haddPolygon && haddPolygon.length >= 3) {
-    beyondHadd = !pointInPolygon([currentLat, currentLng], haddPolygon);
-  } else {
-    // Fallback: circle-based check
-    let maxDist = 0;
-    for (let i = 0; i < city.boundary.length; i++) {
-      const [blat, blng] = city.boundary[i];
-      const d = haversineDistance(city.center[0], city.center[1], blat, blng);
-      if (d > maxDist) maxDist = d;
-    }
-    const haddRadius = maxDist + distance;
-    beyondHadd = distFromOrigin > haddRadius;
-  }
+  // Check if beyond the Hadd boundary from the origin — exact distance from the
+  // edge of the built-up area (the 'urf line), regardless of the drawn ring.
+  const beyondHadd = distanceToPolygonBoundary([currentLat, currentLng], city.boundary) >= distance;
 
   let status;
   let message;

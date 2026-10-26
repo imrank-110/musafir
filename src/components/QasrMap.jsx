@@ -10,6 +10,8 @@ import {
   calculateStatusWithHadd,
   getSupportedCities,
   getUrfBoundary,
+  getApproximateBoundary,
+  getBoundarySource,
   getHaddRange,
   generateUrfPolygon,
   generateHaddBoundary,
@@ -17,6 +19,7 @@ import {
   generateHaddZonePolygon,
   generateBoundaryAtDistance,
   fetchUrfBoundary,
+  loadBoundaries,
   HADD_AL_TARAKHKHUS_KM,
   ONE_WAY_HADD_KM,
   reverseGeocode,
@@ -210,13 +213,25 @@ export default function QasrMap() {
   const [showHaddZone, setShowHaddZone] = useState(true);
   const [showHaddExplainer, setShowHaddExplainer] = useState(false);
   const [showCityBoundaryInfo, setShowCityBoundaryInfo] = useState(false);
+  const [showLegacyBoundary, setShowLegacyBoundary] = useState(false);
   const [userHaddKm, setUserHaddKm] = useState(5);
   const [journeyFarsakhs, setJourneyFarsakhs] = useState(8);
+  const [boundariesLoaded, setBoundariesLoaded] = useState(false);
   const watchIdRef = useRef(null);
   const prevStatusRef = useRef(null);
   const supportedCities = getSupportedCities();
 
   useEffect(() => () => { if (watchIdRef.current !== null) Geolocation.clearWatch({ id: watchIdRef.current }); }, []);
+
+  // Load the bundled built-up ('urf) boundary outlines once on mount.
+  // Also purges stale cached admin boundaries for the official cities.
+  useEffect(() => {
+    let cancelled = false;
+    loadBoundaries().then(() => {
+      if (!cancelled) setBoundariesLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   // Load saved Hadd from localStorage
   useEffect(() => {
@@ -320,17 +335,19 @@ export default function QasrMap() {
   const handleCitySelect = useCallback(async (city) => {
     setCityName(city);
     let cityData = null;
-    // Always try Overpass API first for real OSM geometry
-    try {
-      const result = await fetchUrfBoundary(city);
-      if (result && result.boundary) {
-        saveUserCity(city, { center: result.center, boundary: result.boundary });
-        cityData = result;
-      }
-    } catch {}
-    // Fallback to built-in boundary
+    // Prefer the official bundled built-up ('urf) outline — no runtime fetch
+    // needed and it cannot be displaced by a coarse admin boundary.
+    cityData = getUrfBoundary(city);
+    // For cities outside the official bundle, generate a true built-up outline
+    // via Overpass (concave outline), falling back to the admin boundary.
     if (!cityData) {
-      cityData = getUrfBoundary(city);
+      try {
+        const result = await fetchUrfBoundary(city);
+        if (result && result.boundary) {
+          saveUserCity(city, { center: result.center, boundary: result.boundary });
+          cityData = result;
+        }
+      } catch {}
     }
     if (cityData) {
       setLocation({ lat: cityData.center[0], lng: cityData.center[1] });
@@ -340,9 +357,11 @@ export default function QasrMap() {
       setError('');
       setDetectedCityName('');
     }
-  }, [journeyFarsakhs]);
+  }, [journeyFarsakhs, boundariesLoaded]);
 
   const urfPolygon = cityName ? generateUrfPolygon(cityName) : null;
+  const legacyPolygon = (cityName && showLegacyBoundary) ? getApproximateBoundary(cityName) : null;
+  const boundaryInfo = cityName ? getBoundarySource(cityName) : null;
   const haddZonePolygon = (cityName && showHaddZone) ? generateHaddZonePolygon(cityName, userHaddKm) : null;
   const activeBoundary = cityName
     ? (boundaryType === 'one-way' ? generateOneWayBoundary(cityName) : generateHaddBoundary(cityName))
@@ -532,6 +551,13 @@ export default function QasrMap() {
               <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
               <MapController center={location ? [location.lat, location.lng] : null} zoom={10} />
               {urfPolygon && <Polygon positions={urfPolygon} pathOptions={{ color: '#22c55e', weight: 2.5, fillColor: '#22c55e', fillOpacity: 0.1 }} />}
+              {legacyPolygon && (
+                <Polygon
+                  positions={legacyPolygon}
+                  pathOptions={{ color: '#e11d48', weight: 2, dashArray: '6 4', fillColor: '#e11d48', fillOpacity: 0.05 }}
+                  interactive={false}
+                />
+              )}
               {haddZonePolygon && (
                 <Polygon
                   positions={haddZonePolygon}
@@ -566,6 +592,18 @@ export default function QasrMap() {
           </div>
           <div className="flex flex-wrap gap-3 mt-2">
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#22c55e', opacity: 0.5 }} /><span>City Boundary</span><button onClick={() => setShowCityBoundaryInfo(!showCityBoundaryInfo)} class="w-5 h-5 rounded-full bg-transparent hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center justify-center text-[9px] leading-none" title="About the City Boundary">ℹ</button></div>
+            {boundaryInfo && boundaryInfo.kind !== 'none' && (
+              <div className={`px-1.5 py-0.5 rounded-[var(--radius-sm)] text-[11px] font-medium border ${boundaryInfo.kind === 'osm' ? 'bg-[var(--accent-light)] text-[var(--accent)] border-transparent' : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)] border-[var(--border)]'}`} title={`Boundary data source: ${boundaryInfo.kind}`}>
+                {boundaryInfo.kind === 'osm' ? 'OSM built-up' : boundaryInfo.kind === 'generated' ? 'Generated' : 'Approximate'}
+                {boundaryInfo.areaKm2 ? ` · ${Math.round(boundaryInfo.areaKm2).toLocaleString()} km²` : ''}
+              </div>
+            )}
+            {cityName && getApproximateBoundary(cityName) && (
+              <button onClick={() => setShowLegacyBoundary(!showLegacyBoundary)}
+                className={`px-2 py-0.5 text-[11px] font-medium rounded-[var(--radius-sm)] transition-colors ${showLegacyBoundary ? 'bg-[#e11d48]/15 text-[#e11d48]' : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'}`}>
+                {showLegacyBoundary ? 'Old boundary: shown' : 'Compare with old boundary'}
+              </button>
+            )}
             {showHaddZone && <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#8b5cf6', opacity: 0.4 }} /><span>Hadd al-Tarakhkhus ({userHaddKm} km)</span></div>}
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
               <div className="w-3 h-3 rounded" style={{ background: boundaryType === 'one-way' ? '#f97316' : '#6b7280', opacity: boundaryType === 'one-way' ? 0.5 : 0.4 }} />
@@ -605,7 +643,7 @@ export default function QasrMap() {
           <div className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-[var(--radius-md)] p-3.5 slide-up">
             <div className="flex items-center justify-between mb-1">
               <p className="text-xs font-semibold text-[var(--text-primary)]">About the City Boundary</p>
-              <button onClick={() => setShowCityBoundaryInfo(false)} class="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors">✕</button>
+              <button onClick={() => setShowCityBoundaryInfo(false)} className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors">✕</button>
             </div>
             <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
               The <strong>City Boundary</strong> shows where the continuous built-up residential area ends — the
@@ -613,8 +651,9 @@ export default function QasrMap() {
               8-farsakh (22/44 km) journey distance is measured.
             </p>
             <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed mt-0.5">
-              The boundary is generated from <strong>OpenStreetMap data</strong> showing actual residential land use,
-              tracing the real contours of streets and housing developments rather than artificial straight lines.
+              The boundary traces the outer edge of the <strong>actual built-up area</strong> from OpenStreetMap: all
+              residential, commercial and industrial land is merged into one outline and runs along the real contours
+              of streets and housing developments — not administrative city limits and not artificial straight lines.
             </p>
           </div>
           )}
