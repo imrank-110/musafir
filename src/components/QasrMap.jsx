@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useRef } from 'react';
+﻿import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, Polygon, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Geolocation } from '@capacitor/geolocation';
@@ -326,13 +326,15 @@ export default function QasrMap() {
   }, [handleHaddChange, journeyFarsakhs]);
 
   const urfPolygon = cityName ? generateUrfPolygon(cityName) : null;
-  // The 8-farsakh ring: 22 km round-trip / 44 km one-way, a simple outward
-  // extension from each point of the 'urf boundary.
-  const haddBoundary = cityName
-    ? (boundaryType === 'one-way' ? generateOneWayBoundary(cityName) : generateHaddBoundary(cityName))
-    : null;
+  // The 8-farsakh ring: 22 km round-trip / 44 km one-way, a true outward buffer
+  // from the 'urf boundary (never self-intersecting, even on jagged city lines).
+  const haddBoundary = useMemo(() =>
+    (cityName ? (boundaryType === 'one-way' ? generateOneWayBoundary(cityName) : generateHaddBoundary(cityName)) : null),
+    [cityName, boundaryType]);
   // The Hadd al-Tarakhkhus (visibility/audibility) zone: user-adjustable km.
-  const haddZonePolygon = (cityName && showHaddZone) ? generateHaddZonePolygon(cityName, userHaddKm) : null;
+  const haddZonePolygon = useMemo(() =>
+    (cityName && showHaddZone ? generateHaddZonePolygon(cityName, userHaddKm) : null),
+    [cityName, showHaddZone, userHaddKm]);
   const haddRange = cityName ? getHaddRange(cityName) : { min: 2, recommended: 5, max: 14 };
   const legacyPolygon = (cityName && showLegacyBoundary) ? getApproximateBoundary(cityName) : null;
   const boundaryInfo = cityName ? getBoundarySource(cityName) : null;

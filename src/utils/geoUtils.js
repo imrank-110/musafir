@@ -1,4 +1,5 @@
 import bundledBoundaries from '../data/city-boundaries.json' with { type: 'json' };
+import turfBuffer from '@turf/buffer';
 
 /**
  * geoUtils.js — Geographic Utilities for Qasr Status & 'Urf Boundary
@@ -839,21 +840,71 @@ function destinationPoint(lat, lng, distKm, brngDeg) {
   return [φ2 * RAD, wrapLng(λ2 * RAD)];
 }
 
-// ─── Polygon Buffer (Simple Radial Extension) ─────────────────────────────────
+// ─── Polygon Buffer (True Outward Buffer) ─────────────────────────────────────
 
 /**
- * Outward-buffer a polygon by `offsetKm`.
+ * Outward-buffer a polygon by `offsetKm` using a true geodesic buffer
+ * (@turf/buffer). Unlike a naive per-vertex "radial enlarge" — which crosses
+ * itself on concave, jagged boundaries like city limits — a true buffer treats
+ * the boundary as a set of edges moved outward by the exact distance, rounding
+ * every notch. The Hadd rings (22/44 km) and the user-adjustable Hadd
+ * al-Tarakhkhus zone are therefore clean, non-intersecting rings.
  *
- * Each boundary vertex is moved directly outward along the ray from the polygon
- * centroid to that vertex, by the requested distance (e.g. 22 km round-trip or
- * 44 km one-way). This is the classic "extension from each point of the
- * boundary" — predictable and stable even on jagged built-up outlines.
- *
- * @param {Array<[number, number]>} polygon - closed [lat, lng] ring (CCW or CW)
+ * @param {Array<[number, number]>} polygon - closed [lat, lng] ring
  * @param {number} offsetKm - outward distance in km
  * @returns {Array<[number, number]> | null}
  */
 export function bufferPolygon(polygon, offsetKm, origin) {
+  if (!polygon || polygon.length < 3) return null;
+
+  try {
+    // Close the ring (turf expects it closed).
+    const first = polygon[0];
+    const last = polygon[polygon.length - 1];
+    const ring = (first[0] === last[0] && first[1] === last[1])
+      ? polygon
+      : polygon.concat([[first[0], first[1]]]);
+
+    const feature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        // turf uses [lng, lat] pairs.
+        coordinates: [ring.map(p => [p[1], p[0]])],
+      },
+    };
+    const out = turfBuffer(feature, offsetKm, { units: 'kilometers' });
+    if (!out || !out.geometry || !out.geometry.coordinates) return null;
+
+    let ringCoords;
+    if (out.geometry.type === 'Polygon') {
+      ringCoords = out.geometry.coordinates[0];
+    } else if (out.geometry.type === 'MultiPolygon') {
+      ringCoords = out.geometry.coordinates.reduce((a, b) => (b[0].length > a[0].length ? b : a))[0];
+    } else {
+      return null;
+    }
+    if (!ringCoords || ringCoords.length < 4) return null;
+
+    const result = ringCoords.map(([lng, lat]) => [lat, lng]);
+    const f = result[0];
+    const l = result[result.length - 1];
+    if (Math.abs(f[0] - l[0]) > 0.0001 || Math.abs(f[1] - l[1]) > 0.0001) {
+      result.push([f[0], f[1]]);
+    }
+    return result;
+  } catch (e) {
+    // Fall back to the simple radial extension if the buffer library fails.
+    return bufferPolygonRadial(polygon, offsetKm, origin);
+  }
+}
+
+/**
+ * Simple per-vertex radial extension (fallback). Each boundary point is pushed
+ * straight outward from the polygon centroid by the requested distance.
+ */
+function bufferPolygonRadial(polygon, offsetKm, origin) {
   if (!polygon || polygon.length < 3) return null;
 
   let clat = 0, clng = 0;
