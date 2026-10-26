@@ -319,19 +319,18 @@ export default function QasrMap() {
 
   const handleCitySelect = useCallback(async (city) => {
     setCityName(city);
-    let cityData = getUrfBoundary(city);
-    if (!cityData) {
-      // Try to fetch from Overpass
-      try {
-        const result = await fetchUrfBoundary(city);
-        if (result && result.boundary) {
-          saveUserCity(city, { center: result.center, boundary: result.boundary });
-          cityData = result;
-        }
-      } catch {}
-      if (!cityData && getUrfBoundary(city)) {
-        cityData = getUrfBoundary(city);
+    let cityData = null;
+    // Always try Overpass API first for real OSM geometry
+    try {
+      const result = await fetchUrfBoundary(city);
+      if (result && result.boundary) {
+        saveUserCity(city, { center: result.center, boundary: result.boundary });
+        cityData = result;
       }
+    } catch {}
+    // Fallback to built-in boundary
+    if (!cityData) {
+      cityData = getUrfBoundary(city);
     }
     if (cityData) {
       setLocation({ lat: cityData.center[0], lng: cityData.center[1] });
