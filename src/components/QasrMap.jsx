@@ -208,6 +208,7 @@ export default function QasrMap() {
   const [distanceToHadd, setDistanceToHadd] = useState(null);
   const [monitorPath, setMonitorPath] = useState([]);
   const [showHaddZone, setShowHaddZone] = useState(true);
+  const [showHaddExplainer, setShowHaddExplainer] = useState(false);
   const [userHaddKm, setUserHaddKm] = useState(5);
   const [journeyFarsakhs, setJourneyFarsakhs] = useState(8);
   const watchIdRef = useRef(null);
@@ -417,7 +418,7 @@ export default function QasrMap() {
       {cityName && (
       <div className="bg-white border border-[var(--border)] rounded-[var(--radius-lg)] shadow-[var(--shadow-sm)] p-4 mb-4">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Hadd al-Tarakhkhus</h3>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Hadd al-Tarakhkhus</h3><button onClick={() => setShowHaddExplainer(!showHaddExplainer)} class="w-7 h-7 rounded-full bg-[var(--bg-secondary)] hover:bg-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center text-xs font-semibold" title="Why this recommendation?">ⓘ</button>
           <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
             <input type="checkbox" checked={showHaddZone} onChange={e => setShowHaddZone(e.target.checked)} className="w-3.5 h-3.5 rounded accent-[var(--accent)]" />
             Show on map
@@ -444,6 +445,19 @@ export default function QasrMap() {
           <span className="text-[11px] text-[var(--text-secondary)]">Your Hadd: <strong class="text-[var(--accent)]">{userHaddKm} km</strong></span>
           <span className="text-[11px] text-[var(--text-tertiary)]">Recommended: {haddRange.recommended} km</span>
         </div>
+
+        {showHaddExplainer && (
+        <div className="mt-2 p-3 bg-[var(--bg-secondary)] border border-[var(--border)] rounded-[var(--radius-md)] text-xs text-[var(--text-tertiary)] leading-relaxed slide-up">
+          <p className="font-medium text-[var(--text-secondary)] mb-1">Why {haddRange.recommended} km?</p>
+          <p>The Hadd al-Tarakhkhus is where <strong>city walls are no longer visible</strong> or the <strong>adhan can no longer be heard</strong> (Ayatollah Sistani). Modern cities lack walls and public adhan, so this is inherently <strong>subjective</strong> ? this is a recommendation, not a ruling.</p>
+          {!haddRange.isDefault ? (
+            <p className="mt-1"><strong>{cityName}</strong>’s ‘Urf boundary has an estimated average radius of <strong>{haddRange.radiusKm} km</strong>. Larger metros have taller/denser edge development visible from farther away. Using a horizon-visibility formula (3.2 × √radius), the recommended Hadd is <strong>{haddRange.recommended} km</strong>, with a plausible range of {haddRange.min}–{haddRange.max} km.</p>
+          ) : (
+            <p className="mt-1">This city uses a generic fallback. Adjust the slider to your best judgment.</p>
+          )}
+          <p className="mt-1">Adjust the slider above to where you personally believe the city’s presence is no longer perceptible.</p>
+        </div>
+        )}
 
         <div className="mt-2.5 pt-2.5 border-t border-[var(--border-light)]">
           <p className="text-xs font-medium text-[var(--text-secondary)] mb-1.5">Intended journey distance</p>

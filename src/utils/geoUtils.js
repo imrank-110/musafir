@@ -1046,8 +1046,8 @@ function estimateCityRadiusKm(cityData) {
 
 export function getHaddRange(cityName) {
   const city = getUrfBoundary(cityName);
-  if (!city) return DEFAULT_HADD_RANGE;
-  if (city.haddRange) return city.haddRange;
+  if (!city) return { ...DEFAULT_HADD_RANGE, radiusKm: 10, isDefault: true };
+  if (city.haddRange) return { ...city.haddRange, radiusKm: estimateCityRadiusKm(city), isDefault: false };
   const radiusKm = estimateCityRadiusKm(city);
   const recommended = clamp(3.2 * Math.sqrt(radiusKm), 4, 13);
   const minKm = clamp(recommended * 0.4, 2, recommended - 1);
@@ -1056,6 +1056,8 @@ export function getHaddRange(cityName) {
     min: Math.round(minKm * 10) / 10,
     recommended: Math.round(recommended * 10) / 10,
     max: Math.round(maxKm * 10) / 10,
+    radiusKm: Math.round(radiusKm * 10) / 10,
+    isDefault: false,
   };
 }
 export function generateHaddZonePolygon(cityName, distanceKm) {
