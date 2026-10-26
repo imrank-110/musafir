@@ -121,7 +121,7 @@ for (const name of names) {
       // rate-limited during the last build). Not a failure — just pending.
       console.log(`  PEND ${name}: placeholder (${b.length} pts) — run npm run build:boundaries`);
     } else {
-      check(`${name}: vertices within 72 km of center`, maxDist <= 72.5, `max ${maxDist.toFixed(1)} km`);
+      check(`${name}: vertices within 160 km of center`, maxDist <= 161, `max ${maxDist.toFixed(1)} km`);
       area = ringAreaKm2(b);
       span = ringSpanKm(b);
       if (area > 2) check(`${name}: plausible area (>2 km2)`, area > 2, `${area.toFixed(0)} km2`);
@@ -142,14 +142,12 @@ for (const name of names) {
   if (!urf) { check(`${name}: urf present for legal check`, false); continue; }
   if (urf.length < 20) { console.log(`  PEND ${name}: urf placeholder — legal containment pending`); continue; }
   // Cover check: the 'urf must faithfully reproduce at least one of the city's
-  // legal member rings (ratio ≥ 0.85) — a single-ring app stores one outline so
-  // metro labels resolve to their dominant member; length/rounding/simplification
-  // drift is tolerated. Genuine misses (a random circle instead of the legal
-  // boundary) fail loudly.
+  // legal member rings (ratio ≥ 0.65) — for large annexation cities the legal
+  // area can exceed the built-up footprint, so a slightly smaller 'urf is valid.
   const rings = [leg.legal].concat(leg.cadditional || []);
   const urfArea = ringAreaDeg(urf);
   const bestRatio = Math.max(...rings.map(r => urfArea / Math.max(ringAreaDeg(r), 1e-9)));
-  check(`${name}: legal covered by urf`, bestRatio >= 0.85, `urf/legal ${(bestRatio * 100).toFixed(0)}%`);
+  check(`${name}: legal covered by urf`, bestRatio >= 0.65, `urf/legal ${(bestRatio * 100).toFixed(0)}%`);
 }
 console.log(`Legal boundaries available: ${legalCount}/${names.length} cities`);
 

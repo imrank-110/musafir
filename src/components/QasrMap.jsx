@@ -451,7 +451,7 @@ export default function QasrMap() {
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: boundaryType === 'one-way' ? '#f97316' : '#6b7280', opacity: boundaryType === 'one-way' ? 0.5 : 0.4 }} /><span>{boundaryType === 'one-way' ? 'Hadd (44 km)' : 'Hadd (22 km)'}</span></div>
             {boundaryInfo && boundaryInfo.kind !== 'none' && (
               <div className={`px-1.5 py-0.5 rounded-[var(--radius-sm)] text-[11px] font-medium border ${boundaryInfo.kind === 'osm' ? 'bg-[var(--accent-light)] text-[var(--accent)] border-transparent' : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)] border-[var(--border)]'}`} title={`Boundary data source: ${boundaryInfo.kind}`}>
-                {boundaryInfo.kind === 'osm' ? 'Legal + built-up · OSM' : boundaryInfo.kind === 'generated' ? 'Generated' : 'Approximate'}
+                {boundaryInfo.kind === 'osm' ? 'Built-up · Census 2020' : boundaryInfo.kind === 'generated' ? 'Generated' : 'Approximate'}
                 {boundaryInfo.areaKm2 ? ` · ${Math.round(boundaryInfo.areaKm2).toLocaleString()} km²` : ''}
               </div>
             )}
