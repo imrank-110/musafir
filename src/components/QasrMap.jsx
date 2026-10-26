@@ -317,9 +317,22 @@ export default function QasrMap() {
     }
   }, []);
 
-  const handleCitySelect = useCallback((city) => {
+  const handleCitySelect = useCallback(async (city) => {
     setCityName(city);
-    const cityData = getUrfBoundary(city);
+    let cityData = getUrfBoundary(city);
+    if (!cityData) {
+      // Try to fetch from Overpass
+      try {
+        const result = await fetchUrfBoundary(city);
+        if (result && result.boundary) {
+          saveUserCity(city, { center: result.center, boundary: result.boundary });
+          cityData = result;
+        }
+      } catch {}
+      if (!cityData && getUrfBoundary(city)) {
+        cityData = getUrfBoundary(city);
+      }
+    }
     if (cityData) {
       setLocation({ lat: cityData.center[0], lng: cityData.center[1] });
       const r = getHaddRange(city);
