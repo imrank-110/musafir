@@ -890,13 +890,13 @@ export function calculateQasrStatus(lat, lng, cityName) {
 
   if (inside) {
     status = 'resident';
-    message = `You are within the estimated 'Urf boundary of ${cityName}. You are considered a Resident (Hadir). Prayers: Tamam (Full). Fasting: Valid.`;
+    message = `You are within the estimated city boundary of ${cityName}. You are considered a Resident (Hadir). Prayers: Tamam (Full). Fasting: Valid.`;
   } else if (!outsideHadd) {
     status = 'transition';
     message = `You are outside the 'Urf boundary but within ${HADD_AL_TARAKHKHUS_KM} km (${(HADD_AL_TARAKHKHUS_KM * 0.621371).toFixed(1)} miles). You have not yet reached Hadd al-Tarakhkhus. Prayers: Tamam (Full). Fasting: Valid.`;
   } else {
     status = 'traveler';
-    message = `You are beyond Hadd al-Tarakhkhus (${HADD_AL_TARAKHKHUS_KM} km / ${(HADD_AL_TARAKHKHUS_KM * 0.621371).toFixed(1)} miles from the 'Urf boundary). You are considered a Traveler (Musafir). Prayers: Qasr (Shortened to 2 Rak'ahs). Fasting: Invalid (Qada required).`;
+    message = `You are beyond Hadd al-Tarakhkhus (${HADD_AL_TARAKHKHUS_KM} km / ${(HADD_AL_TARAKHKHUS_KM * 0.621371).toFixed(1)} miles from the city boundary). You are considered a Traveler (Musafir). Prayers: Qasr (Shortened to 2 Rak'ahs). Fasting: Invalid (Qada required).`;
   }
 
   return {
@@ -1077,7 +1077,7 @@ export function calculateStatusWithHadd(lat, lng, cityName, userHaddKm, journeyF
   if (insideUrf) {
     return {
       status: "resident",
-      message: `You are within the 'Urf boundary of ${cityName}. You are a Resident (Hadir). Prayers: Tamam (Full). Fasting: Valid.`,
+      message: `You are within the city boundary of ${cityName}. You are a Resident (Hadir). Prayers: Tamam (Full). Fasting: Valid.`,
       detail: "inside-urf",
       cityName,
     };
@@ -1181,17 +1181,26 @@ export async function fetchUrfBoundary(cityName, state) {
       return { center, boundary: generateApproximateBoundary(center[0], center[1], 15) };
     }
 
-    // Compute a convex hull to merge all the built-up areas into one outline
-    const hull = convexHull(allPoints);
-    if (hull && hull.length >= 3) {
-      // Close the polygon
-      const closed = [...hull];
-      const first = hull[0];
-      const last = hull[hull.length - 1];
-      if (Math.abs(first[0] - last[0]) > 0.0001 || Math.abs(first[1] - last[1]) > 0.0001) {
-        closed.push([first[0], first[1]]);
+    // Use the actual OSM polygon geometry directly — find the element with the
+    // most nodes (the largest residential polygon) and use its boundary as-is,
+    // preserving real street/house contours instead of wrapping everything in
+    // an artificial convex hull.
+    let bestGeom = null;
+    let bestLen = 0;
+    for (const el of elements) {
+      if (el.geometry && el.geometry.length > bestLen) {
+        bestLen = el.geometry.length;
+        bestGeom = el.geometry.map(n => [n.lat, n.lon]);
       }
-      return { center, boundary: closed };
+    }
+    if (bestGeom && bestGeom.length >= 3) {
+      // Close the polygon
+      const first = bestGeom[0];
+      const last = bestGeom[bestGeom.length - 1];
+      if (Math.abs(first[0] - last[0]) > 0.0001 || Math.abs(first[1] - last[1]) > 0.0001) {
+        bestGeom.push([first[0], first[1]]);
+      }
+      return { center, boundary: bestGeom };
     }
 
     return { center, boundary: generateApproximateBoundary(center[0], center[1], 15) };
@@ -1289,10 +1298,10 @@ export function calculateQasrStatusFromOrigin(currentLat, currentLng, originCity
 
   if (insideUrf) {
     status = 'resident';
-    message = `You are still within the 'Urf boundary of your origin (${originCityName}). You are a Resident (Hadir). Prayers: Tamam (Full). Fasting: Valid.`;
+    message = `You are still within the city boundary of your origin (${originCityName}). You are a Resident (Hadir). Prayers: Tamam (Full). Fasting: Valid.`;
   } else if (!beyondHadd) {
     status = 'transition';
-    message = `You have left the 'Urf boundary of ${originCityName} but have not yet reached Hadd al-Tarakhkhus (${distance} km). Prayers: Tamam (Full). Fasting: Valid.`;
+    message = `You have left the city boundary of ${originCityName} but have not yet reached Hadd al-Tarakhkhus (${distance} km). Prayers: Tamam (Full). Fasting: Valid.`;
   } else {
     status = 'traveler';
     message = `You are beyond Hadd al-Tarakhkhus (${distance} km) from your origin (${originCityName}). You are a Traveler (Musafir). Prayers: Qasr (Shortened to 2 Rak'ahs). Fasting: Invalid (Qada required).`;

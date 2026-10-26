@@ -209,6 +209,7 @@ export default function QasrMap() {
   const [monitorPath, setMonitorPath] = useState([]);
   const [showHaddZone, setShowHaddZone] = useState(true);
   const [showHaddExplainer, setShowHaddExplainer] = useState(false);
+  const [showCityBoundaryInfo, setShowCityBoundaryInfo] = useState(false);
   const [userHaddKm, setUserHaddKm] = useState(5);
   const [journeyFarsakhs, setJourneyFarsakhs] = useState(8);
   const watchIdRef = useRef(null);
@@ -552,7 +553,7 @@ export default function QasrMap() {
             </MapContainer>
           </div>
           <div className="flex flex-wrap gap-3 mt-2">
-            <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#22c55e', opacity: 0.5 }} /><span>'Urf Boundary</span></div>
+            <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#22c55e', opacity: 0.5 }} /><span>City Boundary</span><button onClick={() => setShowCityBoundaryInfo(!showCityBoundaryInfo)} class="w-5 h-5 rounded-full bg-transparent hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center justify-center text-[9px] leading-none" title="About the City Boundary">ℹ</button></div>
             {showHaddZone && <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#8b5cf6', opacity: 0.4 }} /><span>Hadd al-Tarakhkhus ({userHaddKm} km)</span></div>}
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
               <div className="w-3 h-3 rounded" style={{ background: boundaryType === 'one-way' ? '#f97316' : '#6b7280', opacity: boundaryType === 'one-way' ? 0.5 : 0.4 }} />
@@ -573,8 +574,8 @@ export default function QasrMap() {
               <p className="text-xs text-[var(--text-secondary)] mb-2">{qasrStatus.message}</p>
               <div className="text-xs text-[var(--text-tertiary)] space-y-0.5">
                 {cityName && <div>City: <span className="text-[var(--text-secondary)]">{cityName}</span></div>}
-                {qasrStatus.detail === 'inside-urf' && <div className="text-[var(--text-secondary)]">You are inside the 'Urf boundary ⟶ Resident</div>}
-                {qasrStatus.detail === 'before-hadd' && <div className="text-[var(--text-secondary)]">Past 'Urf but before Hadd ⟶ Resident</div>}
+                {qasrStatus.detail === 'inside-urf' && <div className="text-[var(--text-secondary)]">You are inside the city boundary ⟶ Resident</div>}
+                {qasrStatus.detail === 'before-hadd' && <div className="text-[var(--text-secondary)]">Past city boundary but before Hadd ⟶ Resident</div>}
                 {qasrStatus.detail === 'past-hadd-but-short-journey' && <div className="text-[var(--text-secondary)]">Past Hadd but journey under 8 farsakhs ⟶ Resident</div>}
                 {qasrStatus.detail === 'traveler' && <div className="text-[var(--accent)]">Past Hadd + journey 8+ farsakhs ⟶ Traveler</div>}
                 <div className="mt-1 flex flex-wrap gap-1">
@@ -586,6 +587,24 @@ export default function QasrMap() {
                 </div>
               </div>
             </div>
+          )}
+
+          {showCityBoundaryInfo && (
+          <div className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-[var(--radius-md)] p-3.5 slide-up">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-semibold text-[var(--text-primary)]">About the City Boundary</p>
+              <button onClick={() => setShowCityBoundaryInfo(false)} class="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors">✕</button>
+            </div>
+            <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
+              The <strong>City Boundary</strong> shows where the continuous built-up residential area ends — the
+              <strong>outskirts of the town</strong> (per Ayatollah Sistani). This is the line from which the
+              8-farsakh (22/44 km) journey distance is measured.
+            </p>
+            <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed mt-0.5">
+              The boundary is generated from <strong>OpenStreetMap data</strong> showing actual residential land use,
+              tracing the real contours of streets and housing developments rather than artificial straight lines.
+            </p>
+          </div>
           )}
 
           {/* Monitor */}
