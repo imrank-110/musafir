@@ -1020,6 +1020,99 @@ export function generateUrfPolygon(cityName) {
   if (!city) return null;
   return city.boundary;
 }
+// ─── Hadd al-Tarakhkhus (Visibility/Audibility Zone) ──────────────────────────
+//
+// IMPORTANT FIQH NOTE: The Hadd al-Tarakhkhus is NOT the 8-farsakh journey
+// distance. Per Ayatollah Sistani, it is the point beyond which the walls of
+// one's city can no longer be seen and the adhan can no longer be heard. It is
+// typically MUCH CLOSER than the 'Urf boundary + the 8-farsakh threshold.
+// Since many modern cities have no walls or public adhan, this is inherently
+// subjective and must be determined by the mukallaf (the individual). We
+// provide a data-driven *recommendation* based on the city's physical size
+// (larger metros tend to have taller/denser edge development, visible from
+// further away), but let the user adjust it via a slider.
+
+const DEFAULT_HADD_RANGE = { min: 2, recommended: 6, max: 14 };
+
+function estimateCityRadiusKm(cityData) {
+  if (!cityData || !cityData.boundary || cityData.boundary.length === 0) return 10;
+  let total = 0;
+  for (let i = 0; i < cityData.boundary.length; i++) {
+    const [lat, lng] = cityData.boundary[i];
+    total += haversineDistance(cityData.center[0], cityData.center[1], lat, lng);
+  }
+  return total / cityData.boundary.length;
+}
+
+export function getHaddRange(cityName) {
+  const city = getUrfBoundary(cityName);
+  if (!city) return DEFAULT_HADD_RANGE;
+  if (city.haddRange) return city.haddRange;
+  const radiusKm = estimateCityRadiusKm(city);
+  const recommended = clamp(3.2 * Math.sqrt(radiusKm), 4, 13);
+  const minKm = clamp(recommended * 0.4, 2, recommended - 1);
+  const maxKm = clamp(recommended * 1.8, recommended + 1, 16);
+  return {
+    min: Math.round(minKm * 10) / 10,
+    recommended: Math.round(recommended * 10) / 10,
+    max: Math.round(maxKm * 10) / 10,
+  };
+}
+export function generateHaddZonePolygon(cityName, distanceKm) {
+  const city = getUrfBoundary(cityName);
+  if (!city) return null;
+  const range = getHaddRange(cityName);
+  const clamped = clamp(distanceKm, range.min, range.max);
+  return generateBoundaryAtDistance(cityName, clamped);
+}
+
+export function calculateStatusWithHadd(lat, lng, cityName, userHaddKm, journeyFarsakhs) {
+  const city = getUrfBoundary(cityName);
+  if (!city) {
+    return { status: "unknown", message: `No boundary data for "${cityName}". Please consult your local Islamic authority.` };
+  }
+  const insideUrf = pointInPolygon([lat, lng], city.boundary);
+  if (insideUrf) {
+    return {
+      status: "resident",
+      message: `You are within the 'Urf boundary of ${cityName}. You are a Resident (Hadir). Prayers: Tamam (Full). Fasting: Valid.`,
+      detail: "inside-urf",
+      cityName,
+    };
+  }
+  const haddPolygon = generateHaddZonePolygon(cityName, userHaddKm);
+  let pastHadd = false;
+  if (haddPolygon && haddPolygon.length >= 3) {
+    pastHadd = !pointInPolygon([lat, lng], haddPolygon);
+  }
+  if (!pastHadd) {
+    return {
+      status: "resident",
+      message: `You have left the 'Urf boundary but are still within the Hadd al-Tarakhkhus (${userHaddKm} km). You have not yet "left" the city. You are a Resident (Hadir). Prayers: Tamam (Full). Fasting: Valid.`,
+      detail: "before-hadd",
+      userHaddKm,
+      cityName,
+    };
+  }
+  if (journeyFarsakhs < 8) {
+    return {
+      status: "resident",
+      message: `You are past the Hadd al-Tarakhkhus (${userHaddKm} km), but your intended journey (${journeyFarsakhs} farsakhs) is less than 8. You are still a Resident (Hadir).`,
+      detail: "past-hadd-but-short-journey",
+      userHaddKm,
+      journeyFarsakhs,
+      cityName,
+    };
+  }
+  return {
+    status: "traveler",
+    message: `You are past the Hadd al-Tarakhkhus (${userHaddKm} km) and your intended journey (${journeyFarsakhs} farsakhs) is 8 or more. You are a Traveler (Musafir). Prayers: Qasr (Shortened to 2 Rak'ahs). Fasting: Invalid (Qada required).`,
+    detail: "traveler",
+    userHaddKm,
+    journeyFarsakhs,
+    cityName,
+  };
+}
 
 // ─── Overpass API: Fetch Built-Up Area (True 'Urf Boundary) ─────────────────
 
