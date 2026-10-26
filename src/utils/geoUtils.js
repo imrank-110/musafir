@@ -1209,14 +1209,19 @@ export function getHaddRange(cityName) {
   if (!city) return { ...DEFAULT_HADD_RANGE, radiusKm: 10, isDefault: true };
   if (city.haddRange) return { ...city.haddRange, radiusKm: estimateCityRadiusKm(city), isDefault: false };
   const radiusKm = estimateCityRadiusKm(city);
-  const recommended = clamp(3.2 * Math.sqrt(radiusKm), 4, 13);
-  const minKm = clamp(recommended * 0.4, 2, recommended - 1);
-  const maxKm = clamp(recommended * 1.8, recommended + 1, 16);
+  // Per-city recommended Hadd al-Tarakhkhus from the build-time model
+  // (hybrid sight+hearing, density-lowered — tools/compute_hadd.py).
+  const recommended = (city.haddRecommended && city.haddRecommended > 0)
+    ? clamp(city.haddRecommended, 3, 13)
+    : clamp(3.2 * Math.sqrt(radiusKm), 4, 13);
+  const minKm = clamp(recommended * 0.5, 2, recommended - 0.5);
+  const maxKm = clamp(recommended * 1.8, recommended + 0.5, 16);
   return {
     min: Math.round(minKm * 10) / 10,
     recommended: Math.round(recommended * 10) / 10,
     max: Math.round(maxKm * 10) / 10,
     radiusKm: Math.round(radiusKm * 10) / 10,
+    model: city.haddModel || null,
     isDefault: false,
   };
 }

@@ -228,12 +228,7 @@ export default function QasrMap() {
     return () => { cancelled = true; };
   }, []);
 
-  // Load the saved Hadd al-Tarakhkhus km from localStorage.
-  useEffect(() => {
-    try { const saved = localStorage.getItem('musafir_user_hadd'); if (saved) setUserHaddKm(parseFloat(saved)); } catch (e) { /* ignore */ }
-  }, []);
-
-  // Recalc status whenever the Hadd slider or journey length changes.
+  // Recalc status whenever the Hadd or journey length changes.
   useEffect(() => {
     if (cityName && location) {
       setQasrStatus(calculateStatusWithHadd(location.lat, location.lng, cityName, userHaddKm, journeyFarsakhs));
@@ -242,7 +237,6 @@ export default function QasrMap() {
 
   const handleHaddChange = useCallback((newKm) => {
     setUserHaddKm(newKm);
-    try { localStorage.setItem('musafir_user_hadd', newKm.toString()); } catch (e) {}
   }, []);
 
   const handlePositionUpdate = useCallback((lat, lng) => {
@@ -397,7 +391,7 @@ export default function QasrMap() {
             </select>
           </div>
           <div className="mt-3 pt-3 border-t border-[var(--border-light)]">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-medium text-[var(--text-secondary)]">Hadd al-Tarakhkhus</span>
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-semibold text-[#8b5cf6]">{userHaddKm} km</span>
@@ -405,17 +399,31 @@ export default function QasrMap() {
                   className="w-6 h-6 rounded-full bg-transparent hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center justify-center text-xs font-semibold" title="Why this recommendation?">ℹ</button>
               </div>
             </div>
-            <input type="range" min={haddRange.min} max={haddRange.max} step="0.5" value={userHaddKm}
-              onChange={e => handleHaddChange(parseFloat(e.target.value))} disabled={isMonitoring}
-              className="w-full accent-[#8b5cf6]" />
-            <div className="flex justify-between text-[10px] text-[var(--text-tertiary)] mt-0.5"><span>{haddRange.min} km</span><span>{haddRange.max} km</span></div>
+            <p className="text-[11px] text-[var(--text-tertiary)]">
+              Recommended for {cityName || 'this city'} from the density, noise and edge building height of its built-up area.
+            </p>
             {showHaddExplainer && (
-              <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed mt-2">
-                The Hadd al-Tarakhkhus is the point beyond which the city can no longer be seen or its adhan
-                heard (per Ayatollah Sistani). For {cityName || 'this city'} the recommended value is
-                <strong> {haddRange.recommended} km</strong>, based on typical edge-building height and visibility.
-                Adjust it to your own judgment.
-              </p>
+              <div className="mt-2 text-[11px] text-[var(--text-tertiary)] leading-relaxed space-y-1.5 border-t border-[var(--border-light)] pt-2">
+                {haddRange.model ? (
+                  <p>
+                    Edge buildings ≈ <strong>{Number(haddRange.model.edgeH).toFixed(0)} m</strong> tall →
+                    visible ≈ <strong>{haddRange.model.vis} km</strong> · dense/noisy
+                    (<strong>{Number(haddRange.model.density).toLocaleString()}</strong> people/km²) →
+                    adhan ≈ <strong>{haddRange.model.aud} km</strong> →{' '}
+                    <strong className="text-[#8b5cf6]">Hadd ≈ {userHaddKm} km</strong>.
+                  </p>
+                ) : (
+                  <p>
+                    The Hadd al-Tarakhkhus is the point beyond which the city's buildings can no longer be seen
+                    and its adhan can no longer be heard (per Ayatollah Sistani).
+                  </p>
+                )}
+                <p>
+                  <strong className="text-[var(--text-secondary)]">Disclaimer:</strong> this is an estimate, not a
+                  binding ruling. Layout, noise and your own observation differ per city and may make it inaccurate
+                  for you — you are free to adopt the Hadd you judge correct.
+                </p>
+              </div>
             )}
           </div>
         </div>

@@ -151,6 +151,15 @@ for (const name of names) {
 }
 console.log(`Legal boundaries available: ${legalCount}/${names.length} cities`);
 
+// 1c. Per-city Hadd al-Tarakhkhus recommendation sanity ([3, 13] km band)
+console.log('\nHadd al-Tarakhkhus recommendation:');
+for (const name of names) {
+  const city = boundaries[name];
+  if (city.haddRecommended == null) continue;
+  const inBand = city.haddRecommended >= 3 && city.haddRecommended <= 13;
+  check(`${name}: haddRecommended in [3,13]`, inBand, `${city.haddRecommended} km`);
+}
+
 // 2. Hadd ring sanity for a few diverse cities
 console.log('\nHadd ring (22 km) checks:');
 for (const name of ['Houston', 'Dallas-Fort Worth', 'New York City', 'Toronto', 'London']) {
