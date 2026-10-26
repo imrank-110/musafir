@@ -65,4 +65,25 @@ test.describe('Qasr Status Checker', () => {
     const travelerText = await page.locator('text=Traveler').count();
     expect(residentText + travelerText).toBeGreaterThanOrEqual(0);
   });
+
+  test('Journey Type toggle shows Round-trip / One-way without distances', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'Round-trip' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'One-way' })).toBeVisible();
+    expect(await page.locator('text=Round-trip (22 km)').count()).toBe(0);
+    expect(await page.locator('text=One-way (44 km)').count()).toBe(0);
+  });
+
+  test('Intended Journey selector is removed', async ({ page }) => {
+    expect(await page.locator('text=Intended Journey').count()).toBe(0);
+    expect(await page.locator('select:has-text("farsakhs")').count()).toBe(0);
+  });
+
+  test('Compare-with-old-boundary toggle is removed', async ({ page }) => {
+    expect(await page.locator('text=Compare with old boundary').count()).toBe(0);
+  });
+
+  test('city boundary explainer appears after tapping ℹ', async ({ page }) => {
+    await page.locator('button[title="How was the city boundary generated?"]').click();
+    await expect(page.locator('text=How it\'s generated:').first()).toBeVisible();
+  });
 });
