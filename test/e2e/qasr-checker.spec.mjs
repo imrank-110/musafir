@@ -44,6 +44,7 @@ test.describe('Qasr Status Checker', () => {
   test('disclaimer text is present', async ({ page }) => {
     await expect(page.locator('text=Important:').first()).toBeVisible();
     await expect(page.locator('text=This is a guide').first()).toBeVisible();
+    await expect(page.locator('text=starting point of the 8 farsakhs').first()).toBeVisible();
   });
 
   test('Start Monitoring is disabled when no city selected', async ({ page }) => {
@@ -104,5 +105,42 @@ test.describe('Qasr Status Checker', () => {
       }
       return false;
     }, { timeout: 15000 }).toBe(true);
+  });
+
+  test('legal city limits can be toggled off and on', async ({ page }) => {
+    const citySelect = page.locator('select').first();
+    await citySelect.selectOption('Houston');
+    // Wait for the blue overlay to appear (default is on).
+    await expect.poll(async () => {
+      const paths = page.locator('.leaflet-overlay-pane path');
+      const count = await paths.count();
+      for (let i = 0; i < count; i++) {
+        if ((await paths.nth(i).getAttribute('stroke')) === '#3b82f6') return true;
+      }
+      return false;
+    }, { timeout: 15000 }).toBe(true);
+
+    // Toggle off — the blue dashed paths must disappear (legal limits off is
+    // also reflected in the legend entry's tooltip).
+    await page.locator('button[title="Hide legal city limits"]').click();
+    await expect.poll(async () => {
+      const paths = page.locator('.leaflet-overlay-pane path');
+      const count = await paths.count();
+      for (let i = 0; i < count; i++) {
+        if ((await paths.nth(i).getAttribute('stroke')) === '#3b82f6') return false;
+      }
+      return true;
+    }, { timeout: 8000 }).toBe(true);
+
+    // Toggle back on — the overlay returns from the in-memory cache.
+    await page.locator('button[title="Show legal city limits"]').click();
+    await expect.poll(async () => {
+      const paths = page.locator('.leaflet-overlay-pane path');
+      const count = await paths.count();
+      for (let i = 0; i < count; i++) {
+        if ((await paths.nth(i).getAttribute('stroke')) === '#3b82f6') return true;
+      }
+      return false;
+    }, { timeout: 8000 }).toBe(true);
   });
 });
