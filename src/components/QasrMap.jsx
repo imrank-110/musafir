@@ -441,12 +441,12 @@ export default function QasrMap() {
             <MapContainer center={location ? [location.lat, location.lng] : [29.7604, -95.3698]} zoom={10} style={{ height: '100%', width: '100%' }} zoomControl={false}>
               <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
               <MapController center={location ? [location.lat, location.lng] : null} zoom={10} />
-              {urfPolygon && <Polygon positions={urfPolygon} pathOptions={{ color: '#22c55e', weight: 2.5, fillColor: '#22c55e', fillOpacity: 0.1 }} />}
+              {urfPolygon && <Polygon positions={urfPolygon} pathOptions={{ color: '#22c55e', weight: 2.5, fillColor: '#22c55e', fillOpacity: 0.05 }} />}
               {legalBoundaryRings && legalBoundaryRings.rings.map((ring, i) => (
                 <Polygon key={i} positions={ring} interactive={false} pathOptions={{ color: '#3b82f6', weight: 2, dashArray: '8, 6', fillColor: '#3b82f6', fillOpacity: 0 }} />
               ))}
-              {haddZonePolygon && <Polygon positions={haddZonePolygon} pathOptions={{ color: '#8b5cf6', weight: 2, fillColor: '#8b5cf6', fillOpacity: 0.05 }} />}
-              {haddBoundary && <Polygon positions={haddBoundary} pathOptions={{ color: boundaryType === 'one-way' ? '#f97316' : '#6b7280', weight: 3, fillColor: boundaryType === 'one-way' ? '#f97316' : '#6b7280', fillOpacity: 0.06, dashArray: '10, 8' }} />}
+              {haddZonePolygon && <Polygon positions={haddZonePolygon} pathOptions={{ color: '#8b5cf6', weight: 2, fillColor: '#8b5cf6', fillOpacity: 0 }} />}
+              {haddBoundary && <Polygon positions={haddBoundary} pathOptions={{ color: boundaryType === 'one-way' ? '#f97316' : '#6b7280', weight: 3, fillColor: boundaryType === 'one-way' ? '#f97316' : '#6b7280', fillOpacity: 0, dashArray: '10, 8' }} />}
               {monitorPath.length > 1 && <Polygon positions={monitorPath} pathOptions={{ color: 'var(--accent,#b8860b)', weight: 2.5, fillOpacity: 0 }} />}
               {location && <Marker position={[location.lat, location.lng]} icon={isMonitoring ? monitoringIcon : userLocationIcon}>
                 <Popup><div className="text-sm"><strong>Your Location</strong><br />{location.lat.toFixed(4)}, {location.lng.toFixed(4)}<br />Status: {qasrStatus?.status === 'traveler' ? 'Traveler' : qasrStatus?.status === 'resident' ? 'Resident' : 'Unknown'}</div></Popup>
