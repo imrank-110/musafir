@@ -395,15 +395,6 @@ export default function QasrMap() {
                 className={`text-xs font-medium px-2.5 py-1 rounded-[var(--radius-sm)] transition-colors ${boundaryType === 'one-way' ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)]'}`}>One-way</button>
             </div>
           </div>
-          <div className="mt-3 pt-3 border-t border-[var(--border-light)]">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-[var(--text-secondary)]">Hadd al-Tarakhkhus</span>
-              <span className="text-xs font-semibold text-[#8b5cf6]">{userHaddKm} km</span>
-            </div>
-            <p className="text-[11px] text-[var(--text-tertiary)] mt-1">
-              Recommended for {cityName || 'this city'} — Ruling 1304: the point where the city's people can no longer see you.
-            </p>
-          </div>
         </div>
         {error && <div className="mt-3 px-3.5 py-2.5 bg-[#fef2f2] border border-[#fecaca] rounded-[var(--radius-sm)] text-sm text-[var(--danger)]">{error}</div>}
       </div>
