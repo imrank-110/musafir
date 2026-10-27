@@ -98,99 +98,6 @@ async function sendNotification(title, body) {
   }
 }
 
-// ΓöÇΓöÇΓöÇ Verdict Questionnaire ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
-
-function VerdictQuestionnaire({ qasrStatus, onReset }) {
-  const [step, setStep] = useState(1);
-  const [stayDuration, setStayDuration] = useState('');
-  const [hasWatan, setHasWatan] = useState(null);
-  const [passingThroughWatan, setPassingThroughWatan] = useState(null);
-  const [verdict, setVerdict] = useState(null);
-
-  const handleSubmit = useCallback(() => {
-    if (!qasrStatus) return;
-    const isTraveler = qasrStatus.status === 'traveler';
-    const stayDays = parseInt(stayDuration, 10);
-    let finalStatus = isTraveler ? 'traveler' : 'resident';
-    let prayers = isTraveler ? "Qasr (Shortened to 2 Rak'ahs)" : 'Tamam (Full 4 Rak\'ahs)';
-    let fasting = isTraveler ? 'Invalid (Must make up via Qada)' : 'Valid';
-    let details = [];
-    if (isTraveler && stayDays >= 10) { finalStatus = 'resident'; prayers = 'Tamam (Full 4 Rak\'ahs)'; fasting = 'Valid'; details.push('You intend to stay 10 days or more. You are considered a Resident at your destination.'); }
-    if (passingThroughWatan === 'yes') { finalStatus = 'resident'; prayers = 'Tamam (Full 4 Rak\'ahs)'; fasting = 'Valid'; details.push('You are passing through your Watan (hometown). Travel status is reset. You are a Resident here.'); }
-    if (!isTraveler) details.push("You are within the city limits ('Urf boundary). You are a Resident.");
-    if (isTraveler && stayDays < 10 && passingThroughWatan !== 'yes') { details.push('You are beyond Hadd al-Tarakhkhus (22 km from city limits). You are a Traveler.'); if (stayDays > 0) details.push(`You intend to stay ${stayDays} days (less than 10). Traveler status maintained.`); }
-    setVerdict({ finalStatus, prayers, fasting, details });
-  }, [qasrStatus, stayDuration, passingThroughWatan]);
-
-  if (verdict) {
-    return (
-      <div className="bg-white border border-[var(--border)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] p-5 slide-up">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Your Ruling (Hukm)</h3>
-        <div className={`border rounded-[var(--radius-sm)] p-4 ${verdict.finalStatus === 'traveler' ? 'border-[var(--accent)]/30 bg-[var(--accent-light)]' : 'border-[var(--border)] bg-[var(--bg-secondary)]'}`}>
-          <p className={`text-base font-semibold text-center mb-3 ${verdict.finalStatus === 'traveler' ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>
-            {verdict.finalStatus === 'traveler' ? 'Traveler (Musafir)' : 'Resident (Hadir)'}
-          </p>
-          <div className="space-y-2">
-            <div className="flex justify-between items-center bg-white rounded-[var(--radius-sm)] px-3 py-2 border border-[var(--border)]">
-              <span className="text-xs text-[var(--text-secondary)]">Prayers</span>
-              <span className={`text-xs font-semibold ${verdict.prayers.includes('Qasr') ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>{verdict.prayers}</span>
-            </div>
-            <div className="flex justify-between items-center bg-white rounded-[var(--radius-sm)] px-3 py-2 border border-[var(--border)]">
-              <span className="text-xs text-[var(--text-secondary)]">Fasting</span>
-              <span className={`text-xs font-semibold ${verdict.fasting.includes('Invalid') ? 'text-[var(--danger)]' : 'text-[var(--success)]'}`}>{verdict.fasting}</span>
-            </div>
-          </div>
-          <div className="mt-3 space-y-1">
-            {verdict.details.map((d, i) => <p key={i} className="text-xs text-[var(--text-secondary)] flex gap-1.5"><span className="text-[var(--accent)]">ΓÇö</span>{d}</p>)}
-          </div>
-        </div>
-        <button onClick={() => { setVerdict(null); setStep(1); setStayDuration(''); setHasWatan(null); setPassingThroughWatan(null); onReset?.(); }} className="w-full h-10 mt-4 bg-[var(--bg-secondary)] hover:bg-[var(--border)] text-sm font-semibold text-[var(--text-primary)] rounded-[var(--radius-sm)] transition-colors">Start Over</button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white border border-[var(--border)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Step {step} of 3</h3>
-        <div className="flex gap-1.5">
-          {[1, 2, 3].map(s => <div key={s} className={`w-2 h-2 rounded-full ${s === step ? 'bg-[var(--accent)]' : s < step ? 'bg-[var(--text-tertiary)]' : 'bg-[var(--border)]'}`} />)}
-        </div>
-      </div>
-      {step === 1 && (
-        <div>
-          <p className="text-sm text-[var(--text-secondary)] mb-3">How many days do you intend to stay at your destination?</p>
-          <input type="number" min="0" max="365" value={stayDuration} onChange={e => setStayDuration(e.target.value)} placeholder="Enter number of days..." className="w-full h-11 px-3 bg-white border border-[var(--border)] rounded-[var(--radius-sm)] text-sm font-medium text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-light)] mb-3" />
-          <button onClick={() => setStep(2)} disabled={!stayDuration} className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:bg-[var(--border)] disabled:text-[var(--text-tertiary)] text-white text-sm font-semibold rounded-[var(--radius-sm)] transition-colors">Next</button>
-        </div>
-      )}
-      {step === 2 && (
-        <div>
-          <p className="text-sm text-[var(--text-secondary)] mb-3">Do you have a Watan (hometown) that you are passing through?</p>
-          <div className="flex gap-2 mb-3">
-            <button onClick={() => { setHasWatan('yes'); setPassingThroughWatan('yes'); setStep(3); }} className={`flex-1 h-11 rounded-[var(--radius-sm)] text-sm font-semibold transition-colors ${hasWatan === 'yes' ? 'bg-[var(--accent)] text-white' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--border)]'}`}>Yes</button>
-            <button onClick={() => { setHasWatan('no'); setPassingThroughWatan('no'); setStep(3); }} className={`flex-1 h-11 rounded-[var(--radius-sm)] text-sm font-semibold transition-colors ${hasWatan === 'no' ? 'bg-[var(--accent)] text-white' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--border)]'}`}>No</button>
-          </div>
-          <button onClick={() => setStep(1)} className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors">Back</button>
-        </div>
-      )}
-      {step === 3 && (
-        <div>
-          <p className="text-sm text-[var(--text-secondary)] mb-3">Are you passing through your Watan during this trip?</p>
-          <div className="flex gap-2 mb-3">
-            <button onClick={() => setPassingThroughWatan('yes')} className={`flex-1 h-11 rounded-[var(--radius-sm)] text-sm font-semibold transition-colors ${passingThroughWatan === 'yes' ? 'bg-[var(--accent)] text-white' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--border)]'}`}>Yes</button>
-            <button onClick={() => setPassingThroughWatan('no')} className={`flex-1 h-11 rounded-[var(--radius-sm)] text-sm font-semibold transition-colors ${passingThroughWatan === 'no' ? 'bg-[var(--accent)] text-white' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--border)]'}`}>No</button>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setStep(2)} className="flex-1 h-11 bg-[var(--bg-secondary)] hover:bg-[var(--border)] text-sm font-semibold text-[var(--text-primary)] rounded-[var(--radius-sm)] transition-colors">Back</button>
-            <button onClick={handleSubmit} disabled={!passingThroughWatan} className="flex-1 h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:bg-[var(--border)] disabled:text-[var(--text-tertiary)] text-white text-sm font-semibold rounded-[var(--radius-sm)] transition-colors">Get Verdict</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ΓöÇΓöÇΓöÇ Main Component ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 export default function QasrMap() {
@@ -199,7 +106,6 @@ export default function QasrMap() {
   const [qasrStatus, setQasrStatus] = useState(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [showQuestionnaire, setShowQuestionnaire] = useState(false);
   const [detectedCityName, setDetectedCityName] = useState('');
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [haddAlerted, setHaddAlerted] = useState(false);
@@ -530,19 +436,6 @@ export default function QasrMap() {
               </div>
             )}
           </div>
-
-          {/* Disclaimer */}
-          <div className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-[var(--radius-md)] p-4">
-            <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
-              <strong className="text-[var(--text-secondary)]">Important:</strong> The 'Urf boundary starts from the city's legal limits and expands with the continuous built-up area (urban sprawl). Per Ayatollah Sistani: <em>"The start of the eight farsakhs must be calculated from the point beyond which a person is deemed to be a traveller."</em> The Hadd al-Tarakhkhus (visibility/audibility) zone is subjective and shown as the purple ring; the 22/44 km ring is the 8-farsakh journey measure from the 'Urf outskirts. The green City Boundary is the starting point of the 8 farsakhs — not the blue legal city limits. ΓÇö This is a guide — please use your own judgment and consult a qualified authority.
-            </p>
-          </div>
-
-          {/* Questionnaire */}
-          {qasrStatus && !showQuestionnaire && (
-            <button onClick={() => setShowQuestionnaire(true)} className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-sm font-semibold rounded-[var(--radius-sm)] transition-colors">Get Complete Verdict</button>
-          )}
-          {showQuestionnaire && <VerdictQuestionnaire qasrStatus={qasrStatus} onReset={() => setShowQuestionnaire(false)} />}
         </div>
       </div>
 

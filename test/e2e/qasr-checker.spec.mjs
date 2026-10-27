@@ -41,10 +41,10 @@ test.describe('Qasr Status Checker', () => {
     expect(count).toBeGreaterThanOrEqual(0);
   });
 
-  test('disclaimer text is present', async ({ page }) => {
-    await expect(page.locator('text=Important:').first()).toBeVisible();
-    await expect(page.locator('text=This is a guide').first()).toBeVisible();
-    await expect(page.locator('text=starting point of the 8 farsakhs').first()).toBeVisible();
+  test('disclaimer card and Get Complete Verdict button are removed', async ({ page }) => {
+    expect(await page.locator('text=Important:').count()).toBe(0);
+    expect(await page.locator('text=This is a guide').count()).toBe(0);
+    expect(await page.locator('button:has-text("Get Complete Verdict")').count()).toBe(0);
   });
 
   test('Start Monitoring is disabled when no city selected', async ({ page }) => {
