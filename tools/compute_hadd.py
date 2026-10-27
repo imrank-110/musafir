@@ -50,7 +50,7 @@ def compute_hadd(density_km2):
         "aud": round(aud, 1),
         "knockdown": round(knockdown, 1),
         "hadd": round(rec, 1),
-        "basis": "Ruling 1304 Q&A: a few miles past the city boundary (3-8 km)",
+        "basis": "Ruling 1304: a few miles past the city boundary (3-8 km)",
     }
 
 

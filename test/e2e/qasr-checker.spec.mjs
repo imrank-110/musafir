@@ -112,6 +112,11 @@ test.describe('Qasr Status Checker', () => {
     await expect(page.locator('text=administrative border on paper').first()).toBeVisible();
   });
 
+  test('Hadd explainer opens from the map legend', async ({ page }) => {
+    await page.locator('button[title="Why this recommendation?"]').click();
+    await expect(page.locator('text=can no longer see you').first()).toBeVisible();
+  });
+
   test('legal city limits can be toggled off and on', async ({ page }) => {
     const citySelect = page.locator('select').first();
     await citySelect.selectOption('Houston');

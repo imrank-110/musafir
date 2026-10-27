@@ -342,7 +342,6 @@ export default function QasrMap() {
   const haddZonePolygon = useMemo(() =>
     (cityName && showHaddZone ? generateHaddZonePolygon(cityName, userHaddKm) : null),
     [cityName, showHaddZone, userHaddKm]);
-  const haddRange = cityName ? getHaddRange(cityName) : { min: 2, recommended: 5, max: 14 };
   const boundaryInfo = cityName ? getBoundarySource(cityName) : null;
   const legalBoundaryRings = (cityName && legalBoundariesReady && showLegalLimits) ? getLegalBoundary(cityName) : null;
 
@@ -397,42 +396,13 @@ export default function QasrMap() {
             </div>
           </div>
           <div className="mt-3 pt-3 border-t border-[var(--border-light)]">
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-[var(--text-secondary)]">Hadd al-Tarakhkhus</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-semibold text-[#8b5cf6]">{userHaddKm} km</span>
-                <button onClick={() => setShowHaddExplainer(!showHaddExplainer)}
-                  className="w-6 h-6 rounded-full bg-transparent hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center justify-center text-xs font-semibold" title="Why this recommendation?">ℹ</button>
-              </div>
+              <span className="text-xs font-semibold text-[#8b5cf6]">{userHaddKm} km</span>
             </div>
-            <p className="text-[11px] text-[var(--text-tertiary)]">
-              Recommended for {cityName || 'this city'} from the density, noise and edge building height of its built-up area.
+            <p className="text-[11px] text-[var(--text-tertiary)] mt-1">
+              Recommended for {cityName || 'this city'} — Ruling 1304: the point where the city's people can no longer see you.
             </p>
-            {showHaddExplainer && (
-              <div className="mt-2 text-[11px] text-[var(--text-tertiary)] leading-relaxed space-y-1.5 border-t border-[var(--border-light)] pt-2">
-                {haddRange.model ? (
-                  <p>
-                    Per Ayatollah Sistani's guidance for connected cities (Ruling 1304 Q&A), the Hadd is reached{' '}
-                    <strong>a few miles past the city boundary</strong> — applied as a{' '}
-                    <strong>5 km (3 mi)</strong> anchor, then adjusted for how dense/noisy your city is:{' '}
-                    <strong>{Number(haddRange.model.density).toLocaleString()}</strong> people/km² → the adhan
-                    fades at ≈ <strong>{haddRange.model.aud} km</strong>, inside the{' '}
-                    <strong>3–8 km (2–5 mi)</strong> band →{' '}
-                    <strong className="text-[#8b5cf6]">Hadd ≈ {userHaddKm} km</strong>.
-                  </p>
-                ) : (
-                  <p>
-                    The Hadd al-Tarakhkhus is the point beyond which the city's buildings can no longer be seen
-                    and its adhan can no longer be heard (per Ayatollah Sistani).
-                  </p>
-                )}
-                <p>
-                  <strong className="text-[var(--text-secondary)]">Disclaimer:</strong> this is an estimate, not a
-                  binding ruling. Layout, noise and your own observation differ per city and may make it inaccurate
-                  for you — you are free to adopt the Hadd you judge correct.
-                </p>
-              </div>
-            )}
           </div>
         </div>
         {error && <div className="mt-3 px-3.5 py-2.5 bg-[#fef2f2] border border-[#fecaca] rounded-[var(--radius-sm)] text-sm text-[var(--danger)]">{error}</div>}
@@ -464,7 +434,16 @@ export default function QasrMap() {
               <button onClick={() => setShowBoundaryExplainer(!showBoundaryExplainer)}
                 className="w-5 h-5 rounded-full bg-transparent hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center justify-center text-[11px] font-semibold leading-none" title="How was the city boundary generated?">ℹ</button>
             </div>
-            {showHaddZone && <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#8b5cf6', opacity: 0.4 }} /><span>Hadd al-Tarakhkhus ({userHaddKm} km)</span></div>}
+            {showHaddZone && (
+              <span className="flex items-center gap-1">
+                <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
+                  <div className="w-3 h-3 rounded" style={{ background: '#8b5cf6', opacity: 0.4 }} />
+                  <span>Hadd al-Tarakhkhus ({userHaddKm} km)</span>
+                </div>
+                <button onClick={() => setShowHaddExplainer(!showHaddExplainer)}
+                  className="w-5 h-5 rounded-full bg-transparent hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center justify-center text-[11px] font-semibold leading-none" title="Why this recommendation?">ℹ</button>
+              </span>
+            )}
             <span className="flex items-center gap-1">
               <button onClick={() => setShowLegalLimits(!showLegalLimits)}
                 title={showLegalLimits ? 'Hide legal city limits' : 'Show legal city limits'}
@@ -505,6 +484,17 @@ export default function QasrMap() {
               </p>
               <p>
                 It is shown purely for comparison — the traveller's measurements (the 8 farsakhs and the Hadd al-Tarakhkhus) start from the <strong className="text-[var(--text-secondary)]">green City Boundary</strong>, not from this legal line.
+              </p>
+            </div>
+          )}
+
+          {showHaddExplainer && (
+            <div className="mt-2 text-[11px] text-[var(--text-tertiary)] leading-relaxed space-y-1.5 bg-[var(--bg-secondary)] border border-[var(--border)] rounded-[var(--radius-sm)] p-3">
+              <p>
+                Per <strong>Ruling 1304</strong>, the Hadd al-Tarakhkhus is the point where the people of the town — including those living on its outskirts — can no longer see you. For today's connected cities this point lies a few miles past the City Boundary — applied here within the <strong>3–8 km (2–5 mi)</strong> band, anchored at <strong>5 km (3 mi)</strong> → <strong className="text-[#8b5cf6]">Hadd ≈ {userHaddKm} km</strong>.
+              </p>
+              <p>
+                <strong className="text-[var(--text-secondary)]">Disclaimer:</strong> this is an estimate, not a binding ruling. Layout and your own observation may differ per city — you are free to adopt the Hadd you judge correct.
               </p>
             </div>
           )}
