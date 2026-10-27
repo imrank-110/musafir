@@ -210,6 +210,7 @@ export default function QasrMap() {
   const [boundaryType, setBoundaryType] = useState('round-trip'); // 'round-trip' | 'one-way'
   const [showHaddZone, setShowHaddZone] = useState(true);
   const [showLegalLimits, setShowLegalLimits] = useState(true);
+  const [showLegalExplainer, setShowLegalExplainer] = useState(false);
   const [showHaddExplainer, setShowHaddExplainer] = useState(false);
   const [showBoundaryExplainer, setShowBoundaryExplainer] = useState(false);
   const [userHaddKm, setUserHaddKm] = useState(6);
@@ -411,10 +412,12 @@ export default function QasrMap() {
               <div className="mt-2 text-[11px] text-[var(--text-tertiary)] leading-relaxed space-y-1.5 border-t border-[var(--border-light)] pt-2">
                 {haddRange.model ? (
                   <p>
-                    Edge buildings ≈ <strong>{Number(haddRange.model.edgeH).toFixed(0)} m</strong> tall →
-                    visible ≈ <strong>{haddRange.model.vis} km</strong> · dense/noisy
-                    (<strong>{Number(haddRange.model.density).toLocaleString()}</strong> people/km²) →
-                    adhan ≈ <strong>{haddRange.model.aud} km</strong> →{' '}
+                    Per Ayatollah Sistani's guidance for connected cities (Ruling 1304 Q&A), the Hadd is reached{' '}
+                    <strong>a few miles past the city boundary</strong> — applied as a{' '}
+                    <strong>5 km (3 mi)</strong> anchor, then adjusted for how dense/noisy your city is:{' '}
+                    <strong>{Number(haddRange.model.density).toLocaleString()}</strong> people/km² → the adhan
+                    fades at ≈ <strong>{haddRange.model.aud} km</strong>, inside the{' '}
+                    <strong>3–8 km (2–5 mi)</strong> band →{' '}
                     <strong className="text-[#8b5cf6]">Hadd ≈ {userHaddKm} km</strong>.
                   </p>
                 ) : (
@@ -457,17 +460,21 @@ export default function QasrMap() {
           <div className="flex flex-wrap gap-3 mt-2">
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
               <div className="w-3 h-3 rounded" style={{ background: '#22c55e', opacity: 0.5 }} />
-              <span>'Urf (Resident Zone)</span>
+              <span>City Boundary</span>
               <button onClick={() => setShowBoundaryExplainer(!showBoundaryExplainer)}
                 className="w-5 h-5 rounded-full bg-transparent hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center justify-center text-[11px] font-semibold leading-none" title="How was the city boundary generated?">ℹ</button>
             </div>
             {showHaddZone && <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#8b5cf6', opacity: 0.4 }} /><span>Hadd al-Tarakhkhus ({userHaddKm} km)</span></div>}
-            <button onClick={() => setShowLegalLimits(!showLegalLimits)}
-              title={showLegalLimits ? 'Hide legal city limits' : 'Show legal city limits'}
-              className={`flex items-center gap-1.5 text-xs rounded-full px-1.5 py-0.5 transition-colors ${showLegalLimits ? 'text-[var(--text-tertiary)] hover:bg-[var(--bg-secondary)]' : 'text-[var(--text-tertiary)] opacity-50 line-through hover:opacity-75'}`}>
-              <div className="w-3 h-3 rounded-full shrink-0" style={{ background: 'transparent', border: '1.5px dashed #3b82f6' }} />
-              <span>Legal city limits</span>
-            </button>
+            <span className="flex items-center gap-1">
+              <button onClick={() => setShowLegalLimits(!showLegalLimits)}
+                title={showLegalLimits ? 'Hide legal city limits' : 'Show legal city limits'}
+                className={`flex items-center gap-1.5 text-xs rounded-full px-1.5 py-0.5 transition-colors ${showLegalLimits ? 'text-[var(--text-tertiary)] hover:bg-[var(--bg-secondary)]' : 'text-[var(--text-tertiary)] opacity-50 line-through hover:opacity-75'}`}>
+                <div className="w-3 h-3 rounded-full shrink-0" style={{ background: 'transparent', border: '1.5px dashed #3b82f6' }} />
+                <span>Legal city limits</span>
+              </button>
+              <button onClick={() => setShowLegalExplainer(!showLegalExplainer)}
+                className="w-5 h-5 rounded-full bg-transparent hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center justify-center text-[11px] font-semibold leading-none" title="What are the legal city limits?">ℹ</button>
+            </span>
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: boundaryType === 'one-way' ? '#f97316' : '#6b7280', opacity: boundaryType === 'one-way' ? 0.5 : 0.4 }} /><span>{boundaryType === 'one-way' ? 'Hadd (44 km)' : 'Hadd (22 km)'}</span></div>
             {boundaryInfo && boundaryInfo.kind !== 'none' && (
               <div className={`px-1.5 py-0.5 rounded-[var(--radius-sm)] text-[11px] font-medium border ${boundaryInfo.kind === 'osm' ? 'bg-[var(--accent-light)] text-[var(--accent)] border-transparent' : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)] border-[var(--border)]'}`} title={`Boundary data source: ${boundaryInfo.kind}`}>
@@ -488,6 +495,16 @@ export default function QasrMap() {
               </p>
               <p>
                 <strong className="text-[var(--text-secondary)]">The blue dashed line</strong> is the city's legal (administrative) border — the boundary on paper. The green 'Urf line extends beyond it wherever continuous housing has sprawled past the legal line; in a few annexation-heavy cities the legal charter area is instead larger than the built-up footprint. The fiqhi traveller distance is measured from the green line.
+              </p>
+            </div>
+          )}
+          {showLegalExplainer && (
+            <div className="mt-2 text-[11px] text-[var(--text-tertiary)] leading-relaxed space-y-1.5 bg-[var(--bg-secondary)] border border-[var(--border)] rounded-[var(--radius-sm)] p-3">
+              <p>
+                <strong className="text-[var(--text-secondary)]">The blue dashed line is the legal city limit</strong> — the city's administrative border on paper, set by its charter or the census. It is usually smaller than the built-up City Boundary because urban sprawl grows beyond it.
+              </p>
+              <p>
+                It is shown purely for comparison — the traveller's measurements (the 8 farsakhs and the Hadd al-Tarakhkhus) start from the <strong className="text-[var(--text-secondary)]">green City Boundary</strong>, not from this legal line.
               </p>
             </div>
           )}
@@ -536,7 +553,7 @@ export default function QasrMap() {
           {/* Disclaimer */}
           <div className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-[var(--radius-md)] p-4">
             <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
-              <strong className="text-[var(--text-secondary)]">Important:</strong> The 'Urf boundary starts from the city's legal limits and expands with the continuous built-up area (urban sprawl). Per Ayatollah Sistani: <em>"The start of the eight farsakhs must be calculated from the point beyond which a person is deemed to be a traveller."</em> The Hadd al-Tarakhkhus (visibility/audibility) zone is subjective and shown as the purple ring; the 22/44 km ring is the 8-farsakh journey measure from the 'Urf outskirts. The green Resident Zone ('Urf) is the starting point of the 8 farsakhs — not the blue legal city limits. ΓÇö This is a guide — please use your own judgment and consult a qualified authority.
+              <strong className="text-[var(--text-secondary)]">Important:</strong> The 'Urf boundary starts from the city's legal limits and expands with the continuous built-up area (urban sprawl). Per Ayatollah Sistani: <em>"The start of the eight farsakhs must be calculated from the point beyond which a person is deemed to be a traveller."</em> The Hadd al-Tarakhkhus (visibility/audibility) zone is subjective and shown as the purple ring; the 22/44 km ring is the 8-farsakh journey measure from the 'Urf outskirts. The green City Boundary is the starting point of the 8 farsakhs — not the blue legal city limits. ΓÇö This is a guide — please use your own judgment and consult a qualified authority.
             </p>
           </div>
 

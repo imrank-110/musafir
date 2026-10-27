@@ -1265,8 +1265,8 @@ export function getHaddRange(cityName) {
   // Per-city recommended Hadd al-Tarakhkhus from the build-time model
   // (hybrid sight+hearing, density-lowered — tools/compute_hadd.py).
   const recommended = (city.haddRecommended && city.haddRecommended > 0)
-    ? clamp(city.haddRecommended, 3, 13)
-    : clamp(3.2 * Math.sqrt(radiusKm), 4, 13);
+    ? clamp(city.haddRecommended, 3, 8)
+    : clamp(3.2 * Math.sqrt(radiusKm), 3, 8);
   const minKm = clamp(recommended * 0.5, 2, recommended - 0.5);
   const maxKm = clamp(recommended * 1.8, recommended + 0.5, 16);
   return {

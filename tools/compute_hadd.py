@@ -2,10 +2,13 @@
 """
 compute_hadd.py — per-city Hadd al-Tarakhkhus (hybrid sight + sound, density-lowered)
 
-Physics & fiqh model:
-  visibility_km = 3.57 * sqrt(h_edge)     # curvature horizon for edge buildings
-  audibility_km = urban-sound model sunk by density (noisy/dense -> shorter)
-  recommended   = 0.5*vis + 0.5*aud - density_knockdown, clamped [3, 13]
+Physics & fiqh model (per Sistani Ruling 1304 & Q&A for interconnected cities):
+  The Hadd is the point where the town's people (incl. outskirts) can no longer
+  see the traveller — reached "a few miles past the city limits". Applied here:
+  vis = 3.57 * sqrt(h_edge) retained only as an upper sanity note
+  aud = urban-sound model sunk by density (noisy/dense -> shorter)
+  rec = 5.0 km ("few miles" ≈ 3 mi anchor) + density-based adjustment
+      = clamp(5.0 + (aud - 6.0)*0.35 - knockdown*0.5, 3.0, 8.0)   [2-5 mi]
 
 Reads population/land density from the official Census 2020 UA list
 (tools/cache/ua_list.xlsx) for 'ua2020' cities; Canadian/legal-only cities use
@@ -27,7 +30,7 @@ UA_LIST = os.path.join(ROOT, "tools", "cache", "ua_list.xlsx")
 EDGE_H_M = 11.0          # typical edge (last houses) height proxy, meters
 DEN_BASE = 1500.0        # reference metro density (ppl/km2)
 DEFAULT_DENSITY = 1800.0 # for cities without UA attributes (Canada, etc.)
-TARGET_RANGE = (3.0, 13.0)
+TARGET_RANGE = (3.0, 8.0)  # "a few miles past the city limit" (2-5 mi, Ruling 1304 Q&A)
 
 
 def compute_hadd(density_km2):
@@ -36,13 +39,18 @@ def compute_hadd(density_km2):
     aud = min(max(12.5 / (1.0 + 0.55 * (density_km2 / DEN_BASE)), 2.0), 12.5)
     # Dense metros get knocked further down (traffic, walls, noise).
     knockdown = min(max(1.6 * max(0.0, density_km2 / DEN_BASE - 1.0), 0.0), 4.0)
-    rec = min(max(0.45 * aud + 0.55 * vis - knockdown, TARGET_RANGE[0]), TARGET_RANGE[1])
+    # Anchor at "a few miles" (~5 km / 3 mi past the city boundary) and adjust
+    # for density: denser/noisier cities lose sight & sound sooner, so their
+    # Hadd lands lower inside the 3-8 km (2-5 mi) band.
+    rec = min(max(5.0 + (aud - 6.0) * 0.35 - knockdown * 0.5, TARGET_RANGE[0]), TARGET_RANGE[1])
     return {
         "edgeH": EDGE_H_M,
         "density": round(density_km2),
         "vis": round(vis, 1),
         "aud": round(aud, 1),
+        "knockdown": round(knockdown, 1),
         "hadd": round(rec, 1),
+        "basis": "Ruling 1304 Q&A: a few miles past the city boundary (3-8 km)",
     }
 
 

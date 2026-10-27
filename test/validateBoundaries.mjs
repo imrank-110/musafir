@@ -165,8 +165,8 @@ console.log('\nHadd al-Tarakhkhus recommendation:');
 for (const name of names) {
   const city = boundaries[name];
   if (city.haddRecommended == null) continue;
-  const inBand = city.haddRecommended >= 3 && city.haddRecommended <= 13;
-  check(`${name}: haddRecommended in [3,13]`, inBand, `${city.haddRecommended} km`);
+  const inBand = city.haddRecommended >= 3 && city.haddRecommended <= 8;
+  check(`${name}: haddRecommended in [3,8] (Ruling 1304 few-miles band)`, inBand, `${city.haddRecommended} km`);
 }
 
 // 2. Hadd ring sanity for a few diverse cities

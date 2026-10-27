@@ -53,7 +53,7 @@ test.describe('Qasr Status Checker', () => {
   });
 
   test('legend items are visible on map area', async ({ page }) => {
-    await expect(page.locator('text=Resident Zone').first()).toBeVisible();
+    await expect(page.locator('text=City Boundary').first()).toBeVisible();
     await expect(page.locator('text=Hadd (22 km)').first()).toBeVisible();
   });
 
@@ -105,6 +105,11 @@ test.describe('Qasr Status Checker', () => {
       }
       return false;
     }, { timeout: 15000 }).toBe(true);
+  });
+
+  test('legal city limits explainer appears after tapping its ℹ', async ({ page }) => {
+    await page.locator('button[title="What are the legal city limits?"]').click();
+    await expect(page.locator('text=administrative border on paper').first()).toBeVisible();
   });
 
   test('legal city limits can be toggled off and on', async ({ page }) => {
