@@ -134,9 +134,13 @@ for (const name of names) {
 //     the legal city is the BASE of the 'urf (legal ∪ built-up sprawl).
 console.log('\nLegal boundary containment:');
 let legalCount = 0;
+const missingLegal = [];
 for (const name of names) {
   const leg = legalData[name];
-  if (!leg || !leg.legal) continue;
+  if (!leg || !leg.legal || leg.legal.length < 3) {
+    missingLegal.push(name);
+    continue;
+  }
   legalCount++;
   const urf = boundaries[name]?.boundary;
   if (!urf) { check(`${name}: urf present for legal check`, false); continue; }
@@ -150,6 +154,11 @@ for (const name of names) {
   check(`${name}: legal covered by urf`, bestRatio >= 0.65, `urf/legal ${(bestRatio * 100).toFixed(0)}%`);
 }
 console.log(`Legal boundaries available: ${legalCount}/${names.length} cities`);
+if (missingLegal.length) {
+  check('every bundled city has a legal boundary ring', false, `missing: ${missingLegal.join(', ')}`);
+} else {
+  check('every bundled city has a legal boundary ring', true);
+}
 
 // 1c. Per-city Hadd al-Tarakhkhus recommendation sanity ([3, 13] km band)
 console.log('\nHadd al-Tarakhkhus recommendation:');

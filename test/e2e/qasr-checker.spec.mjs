@@ -86,4 +86,23 @@ test.describe('Qasr Status Checker', () => {
     await page.locator('button[title="How was the city boundary generated?"]').click();
     await expect(page.locator('text=How it\'s generated:').first()).toBeVisible();
   });
+
+  test('legal city limits legend entry is present', async ({ page }) => {
+    await expect(page.locator('text=Legal city limits').first()).toBeVisible();
+  });
+
+  test('legal boundary overlay renders for a selected city', async ({ page }) => {
+    const citySelect = page.locator('select').first();
+    await citySelect.selectOption('Houston');
+    // The legal-boundaries.json file is fetched lazily (4.3 MB) — poll for the
+    // blue dashed Leaflet path instead of guessing a wait.
+    await expect.poll(async () => {
+      const paths = page.locator('.leaflet-overlay-pane path');
+      const count = await paths.count();
+      for (let i = 0; i < count; i++) {
+        if ((await paths.nth(i).getAttribute('stroke')) === '#3b82f6') return true;
+      }
+      return false;
+    }, { timeout: 15000 }).toBe(true);
+  });
 });

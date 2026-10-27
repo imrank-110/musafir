@@ -96,6 +96,59 @@ export async function loadBoundaries() {
   return loadedBoundaries;
 }
 
+// The legal (administrative) city-limit outlines — "the border on paper". They
+// are the base of each bundled 'urf outline and are rendered as a blue dashed
+// overlay so users can compare the fiqhi boundary with the legal one. The file
+// is ~4.3 MB raw, so it is deliberately NOT bundled into the JS: it is fetched
+// lazily once per session and held in memory (the browser HTTP cache serves
+// repeat loads).
+const LEGAL_BOUNDARIES_URL = 'legal-boundaries.json';
+
+let cachedLegalBoundaries = null;
+let legalBoundariesPromise = null;
+
+/**
+ * Fetch the legal (administrative) city-limit rings once and cache in memory.
+ * Safe to call repeatedly — the fetch only happens on the first call.
+ */
+export async function loadLegalBoundaries() {
+  if (cachedLegalBoundaries) return cachedLegalBoundaries;
+  if (!legalBoundariesPromise) {
+    legalBoundariesPromise = fetch(LEGAL_BOUNDARIES_URL)
+      .then(res => {
+        if (!res.ok) throw new Error(`legal-boundaries fetch error: ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        cachedLegalBoundaries = data;
+        return data;
+      })
+      .catch(err => {
+        console.log(`[LEGAL] Failed to load legal boundaries: ${err.message}`);
+        // Cache an empty object so we don't retry a failing fetch every render.
+        cachedLegalBoundaries = {};
+        return cachedLegalBoundaries;
+      });
+  }
+  return legalBoundariesPromise;
+}
+
+/**
+ * Get the legal (administrative) city-limit rings for a city, once loaded.
+ * Returns { rings: [[lat, lng][], ...] } or null when unavailable.
+ */
+export function getLegalBoundary(cityName) {
+  const entry = cachedLegalBoundaries && cachedLegalBoundaries[cityName];
+  if (!entry || !entry.legal || entry.legal.length < 3) return null;
+  const rings = [entry.legal];
+  if (Array.isArray(entry.cadditional)) {
+    for (const ring of entry.cadditional) {
+      if (ring && ring.length >= 3) rings.push(ring);
+    }
+  }
+  return { rings };
+}
+
 // ─── Caching Layer ───────────────────────────────────────────────────────────
 
 /**

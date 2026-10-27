@@ -23,6 +23,8 @@ import {
   saveUserCity,
   calculateDistanceToHadd,
   loadBoundaries,
+  loadLegalBoundaries,
+  getLegalBoundary,
 } from '../utils/geoUtils';
 
 // ΓöÇΓöÇΓöÇ Map Icons ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
@@ -204,6 +206,7 @@ export default function QasrMap() {
   const [distanceToHadd, setDistanceToHadd] = useState(null);
   const [monitorPath, setMonitorPath] = useState([]);
   const [boundariesLoaded, setBoundariesLoaded] = useState(false);
+  const [legalBoundariesReady, setLegalBoundariesReady] = useState(false);
   const [boundaryType, setBoundaryType] = useState('round-trip'); // 'round-trip' | 'one-way'
   const [showHaddZone, setShowHaddZone] = useState(true);
   const [showHaddExplainer, setShowHaddExplainer] = useState(false);
@@ -225,6 +228,15 @@ export default function QasrMap() {
     });
     return () => { cancelled = true; };
   }, []);
+
+  // Fetch the legal (on-paper) city-limit overlays lazily, only once a city is
+  // chosen. The file is not bundled (4 MB); the browser HTTP cache serves
+  // repeat loads.
+  useEffect(() => {
+    if (cityName && !legalBoundariesReady) {
+      loadLegalBoundaries().then(() => setLegalBoundariesReady(true));
+    }
+  }, [cityName, legalBoundariesReady]);
 
   // Recalc status whenever the Hadd changes. The 8-farsakh journey is the
   // standard assumption (removed the per-user Intended Journey selector).
@@ -330,6 +342,7 @@ export default function QasrMap() {
     [cityName, showHaddZone, userHaddKm]);
   const haddRange = cityName ? getHaddRange(cityName) : { min: 2, recommended: 5, max: 14 };
   const boundaryInfo = cityName ? getBoundarySource(cityName) : null;
+  const legalBoundaryRings = (cityName && legalBoundariesReady) ? getLegalBoundary(cityName) : null;
 
   // ΓöÇΓöÇΓöÇ Render ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
@@ -429,6 +442,9 @@ export default function QasrMap() {
               <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
               <MapController center={location ? [location.lat, location.lng] : null} zoom={10} />
               {urfPolygon && <Polygon positions={urfPolygon} pathOptions={{ color: '#22c55e', weight: 2.5, fillColor: '#22c55e', fillOpacity: 0.1 }} />}
+              {legalBoundaryRings && legalBoundaryRings.rings.map((ring, i) => (
+                <Polygon key={i} positions={ring} interactive={false} pathOptions={{ color: '#3b82f6', weight: 2, dashArray: '8, 6', fillColor: '#3b82f6', fillOpacity: 0 }} />
+              ))}
               {haddZonePolygon && <Polygon positions={haddZonePolygon} pathOptions={{ color: '#8b5cf6', weight: 2, fillColor: '#8b5cf6', fillOpacity: 0.05 }} />}
               {haddBoundary && <Polygon positions={haddBoundary} pathOptions={{ color: boundaryType === 'one-way' ? '#f97316' : '#6b7280', weight: 3, fillColor: boundaryType === 'one-way' ? '#f97316' : '#6b7280', fillOpacity: 0.06, dashArray: '10, 8' }} />}
               {monitorPath.length > 1 && <Polygon positions={monitorPath} pathOptions={{ color: 'var(--accent,#b8860b)', weight: 2.5, fillOpacity: 0 }} />}
@@ -445,6 +461,7 @@ export default function QasrMap() {
                 className="w-5 h-5 rounded-full bg-transparent hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center justify-center text-[11px] font-semibold leading-none" title="How was the city boundary generated?">ℹ</button>
             </div>
             {showHaddZone && <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: '#8b5cf6', opacity: 0.4 }} /><span>Hadd al-Tarakhkhus ({userHaddKm} km)</span></div>}
+            <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded-full" style={{ background: 'transparent', border: '1.5px dashed #3b82f6' }} /><span>Legal city limits</span></div>
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: boundaryType === 'one-way' ? '#f97316' : '#6b7280', opacity: boundaryType === 'one-way' ? 0.5 : 0.4 }} /><span>{boundaryType === 'one-way' ? 'Hadd (44 km)' : 'Hadd (22 km)'}</span></div>
             {boundaryInfo && boundaryInfo.kind !== 'none' && (
               <div className={`px-1.5 py-0.5 rounded-[var(--radius-sm)] text-[11px] font-medium border ${boundaryInfo.kind === 'osm' ? 'bg-[var(--accent-light)] text-[var(--accent)] border-transparent' : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)] border-[var(--border)]'}`} title={`Boundary data source: ${boundaryInfo.kind}`}>
@@ -462,6 +479,9 @@ export default function QasrMap() {
               </p>
               <p>
                 <strong className="text-[var(--text-secondary)]">How it's generated:</strong> for the bundled cities, official Census 2020 urban-area polygons and OpenStreetMap built-up landuse are merged into a single outline at build time. For cities we haven't pre-mapped, the app queries OpenStreetMap on the spot and traces the built-up area; the administrative boundary is only a last resort.
+              </p>
+              <p>
+                <strong className="text-[var(--text-secondary)]">The blue dashed line</strong> is the city's legal (administrative) border — the boundary on paper. The green 'Urf line extends beyond it wherever continuous housing has sprawled past the legal line; in a few annexation-heavy cities the legal charter area is instead larger than the built-up footprint. The fiqhi traveller distance is measured from the green line.
               </p>
             </div>
           )}
