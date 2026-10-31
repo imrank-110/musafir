@@ -1,5 +1,13 @@
 import { test, expect } from '@playwright/test';
 
+/** Select a bundled city through the searchable combobox. */
+async function selectCityViaSearch(page, name) {
+  const search = page.locator('input[role="combobox"]').first();
+  await search.click();
+  await search.fill(name);
+  await page.getByRole('option', { name, exact: true }).click();
+}
+
 test.describe('Qasr Status Checker', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
@@ -17,12 +25,11 @@ test.describe('Qasr Status Checker', () => {
     await expect(page.locator('text=Current Location').first()).toBeVisible();
   });
 
-  test('city dropdown is present', async ({ page }) => {
-    const citySelect = page.locator('select').first();
-    await expect(citySelect).toBeVisible();
-    // Default option should be "Select a city..."
-    const defaultOption = citySelect.locator('option').first();
-    await expect(defaultOption).toHaveText('Select a city...');
+  test('city search dropdown is present', async ({ page }) => {
+    const search = page.locator('input[role="combobox"]').first();
+    await expect(search).toBeVisible();
+    await search.click();
+    await expect(page.getByRole('option', { name: 'Houston', exact: true })).toBeVisible();
   });
 
   test('has "Use Current Location" button', async ({ page }) => {
@@ -58,8 +65,7 @@ test.describe('Qasr Status Checker', () => {
   });
 
   test('can select a city from dropdown', async ({ page }) => {
-    const citySelect = page.locator('select').first();
-    await citySelect.selectOption('Houston');
+    await selectCityViaSearch(page, 'Houston');
     // After selecting a city, the Qasr status should appear
     await page.waitForTimeout(500);
     const residentText = await page.locator('text=Resident').count();
@@ -93,8 +99,7 @@ test.describe('Qasr Status Checker', () => {
   });
 
   test('legal boundary overlay renders for a selected city', async ({ page }) => {
-    const citySelect = page.locator('select').first();
-    await citySelect.selectOption('Houston');
+    await selectCityViaSearch(page, 'Houston');
     // The legal-boundaries.json file is fetched lazily (4.3 MB) — poll for the
     // blue dashed Leaflet path instead of guessing a wait.
     await expect.poll(async () => {
@@ -118,8 +123,7 @@ test.describe('Qasr Status Checker', () => {
   });
 
   test('legal city limits can be toggled off and on', async ({ page }) => {
-    const citySelect = page.locator('select').first();
-    await citySelect.selectOption('Houston');
+    await selectCityViaSearch(page, 'Houston');
     // Wait for the blue overlay to appear (default is on).
     await expect.poll(async () => {
       const paths = page.locator('.leaflet-overlay-pane path');
@@ -152,5 +156,19 @@ test.describe('Qasr Status Checker', () => {
       }
       return false;
     }, { timeout: 8000 }).toBe(true);
+  });
+
+  test('Use Current Location requires a selected city and never auto-generates one', async ({ page, context }) => {
+    await context.grantPermissions(['geolocation'], { origin: 'http://localhost:5173' });
+    await context.setGeolocation({ latitude: 29.7604, longitude: -95.3698 });
+
+    // No city selected → the location button just prompts; it must not create a city.
+    await page.locator('button:has-text("Use Current Location")').click();
+    await expect(page.locator('text=Select a city from the list first').first()).toBeVisible();
+
+    // After choosing a city, the same location is measured against it.
+    await selectCityViaSearch(page, 'Houston');
+    await page.locator('button:has-text("Use Current Location")').click();
+    await expect(page.locator('text=measured against Houston').first()).toBeVisible();
   });
 });

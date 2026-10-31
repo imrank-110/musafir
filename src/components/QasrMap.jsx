@@ -6,7 +6,7 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
   calculateStatusWithHadd,
-  getSupportedCities,
+  getBundledCities,
   getUrfBoundary,
   getBoundarySource,
   getHaddRange,
@@ -16,11 +16,6 @@ import {
   generateHaddZonePolygon,
   HADD_AL_TARAKHKHUS_KM,
   ONE_WAY_HADD_KM,
-  reverseGeocode,
-  fetchUrfBoundary,
-  fetchCityBoundary,
-  findCityForLocation,
-  saveUserCity,
   calculateDistanceToHadd,
   loadBoundaries,
   loadLegalBoundaries,
@@ -119,10 +114,16 @@ export default function QasrMap() {
   const [showLegalExplainer, setShowLegalExplainer] = useState(false);
   const [showHaddExplainer, setShowHaddExplainer] = useState(false);
   const [showBoundaryExplainer, setShowBoundaryExplainer] = useState(false);
+  const [citySearch, setCitySearch] = useState('');
+  const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
   const [userHaddKm, setUserHaddKm] = useState(6);
   const watchIdRef = useRef(null);
   const prevStatusRef = useRef(null);
-  const supportedCities = getSupportedCities();
+  const cityDropdownRef = useRef(null);
+  const supportedCities = getBundledCities();
+  const filteredCities = citySearch
+    ? supportedCities.filter(city => city.toLowerCase().includes(citySearch.toLowerCase()))
+    : supportedCities;
 
   useEffect(() => () => { if (watchIdRef.current !== null) Geolocation.clearWatch({ id: watchIdRef.current }); }, []);
 
@@ -145,6 +146,17 @@ export default function QasrMap() {
       loadLegalBoundaries().then(() => setLegalBoundariesReady(true));
     }
   }, [cityName, legalBoundariesReady]);
+
+  // Close the city search dropdown on outside clicks.
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (cityDropdownRef.current && !cityDropdownRef.current.contains(e.target)) {
+        setCityDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
 
   // Recalc status whenever the Hadd changes. The 8-farsakh journey is the
   // standard assumption (removed the per-user Intended Journey selector).
@@ -173,7 +185,7 @@ export default function QasrMap() {
   }, [cityName, userHaddKm, haddAlerted]);
 
   const startMonitoring = useCallback(async () => {
-    if (!cityName) { setError('Please select a city or use your current location first.'); return; }
+    if (!cityName) { setError('Please select a city from the search list first.'); return; }
     setIsMonitoring(true); setHaddAlerted(false); setMonitorPath([]); setDistanceToHadd(null); prevStatusRef.current = null;
     if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
     try {
@@ -195,25 +207,18 @@ export default function QasrMap() {
     return calculateStatusWithHadd(latitude, longitude, city, range.recommended, 8);
   }, [handleHaddChange]);
 
-  async function processLocation(latitude, longitude) {
+  const processLocation = useCallback(async (latitude, longitude) => {
     setLocation({ lat: latitude, lng: longitude }); setIsLoading(false);
-    const matchedCity = findCityForLocation(latitude, longitude);
-    if (matchedCity) { setCityName(matchedCity); setQasrStatus(applyLocationStatus(latitude, longitude, matchedCity)); setError(''); setDetectedCityName(`Snapped to ${matchedCity}`); return; }
-    try {
-      const geoResult = await reverseGeocode(latitude, longitude);
-      const reverseCity = geoResult.city;
-      if (!reverseCity) { setError('Could not determine your city. Please select one from the dropdown.'); return; }
-      const cityData = getUrfBoundary(reverseCity);
-      if (cityData) { setCityName(reverseCity); setQasrStatus(applyLocationStatus(latitude, longitude, reverseCity)); setError(''); setDetectedCityName(`Located: ${reverseCity}, ${geoResult.state || ''}`); return; }
-      setDetectedCityName(`Discovering: ${reverseCity}...`);
-      // Prefer a real built-up outline; fall back to the administrative boundary.
-      let boundaryData = null;
-      try { boundaryData = await fetchUrfBoundary(reverseCity, geoResult.state || ''); } catch {}
-      if (!boundaryData?.boundary) { boundaryData = await fetchCityBoundary(reverseCity, geoResult.state || ''); }
-      if (boundaryData?.boundary) { saveUserCity(reverseCity, { center: boundaryData.center, boundary: boundaryData.boundary }); setCityName(reverseCity); setQasrStatus(applyLocationStatus(latitude, longitude, reverseCity)); setError(''); setDetectedCityName(`New city discovered: ${reverseCity}`); }
-      else { setCityName(''); setQasrStatus({ isInsideUrf: null, distanceFromBoundary: null, isOutsideHadd: true, status: 'unknown', message: `No boundary data for "${reverseCity}". You are likely a Traveler. Please consult a qualified Islamic authority.`, cityName: reverseCity, cityCenter: [latitude, longitude] }); setDetectedCityName(`Unknown city: ${reverseCity}`); }
-    } catch (e) { setError(`Could not determine location: ${e.message}. Please select a city from the dropdown.`); }
-  }
+    // Location never selects or generates a city — it only shows the user's
+    // position relative to the city they chose from the accurate city list.
+    if (!cityName) {
+      setDetectedCityName('Select a city from the list first — your location is measured against that city.');
+      return;
+    }
+    setError('');
+    setQasrStatus(applyLocationStatus(latitude, longitude, cityName));
+    setDetectedCityName(`Location set — measured against ${cityName}.`);
+  }, [cityName, applyLocationStatus]);
 
   const getCurrentLocation = useCallback(async () => {
     setIsLoading(true); setError('');
@@ -224,7 +229,7 @@ export default function QasrMap() {
       if (navigator.geolocation) navigator.geolocation.getCurrentPosition(pos => processLocation(pos.coords.latitude, pos.coords.longitude), err => { setError(`Could not get location: ${err.message}`); setIsLoading(false); }, { enableHighAccuracy: true, timeout: 15000 });
       else { setError('Could not get location.'); setIsLoading(false); }
     }
-  }, []);
+  }, [processLocation]);
 
   const handleCitySelect = useCallback((city) => {
     setCityName(city);
@@ -237,6 +242,12 @@ export default function QasrMap() {
       setError(''); setDetectedCityName('');
     }
   }, [handleHaddChange]);
+
+  const selectCity = useCallback((city) => {
+    handleCitySelect(city);
+    setCitySearch('');
+    setCityDropdownOpen(false);
+  }, [handleCitySelect]);
 
   const urfPolygon = cityName ? generateUrfPolygon(cityName) : null;
   // The 8-farsakh ring: 22 km round-trip / 44 km one-way, a true outward buffer
@@ -282,13 +293,38 @@ export default function QasrMap() {
             </button>
             {detectedCityName && <p className="text-xs text-[var(--accent)] mt-1">{detectedCityName}</p>}
           </div>
-          <div>
-            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Or Select a City</label>
-            <select onChange={e => { if (e.target.value) handleCitySelect(e.target.value); }} value={cityName} disabled={isMonitoring}
-              className="w-full h-11 px-3 bg-white border border-[var(--border)] rounded-[var(--radius-sm)] text-sm font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-light)] disabled:bg-[var(--bg-secondary)]">
-              <option value="">Select a city...</option>
-              {supportedCities.map(city => <option key={city} value={city}>{city}</option>)}
-            </select>
+          <div ref={cityDropdownRef} className="relative">
+            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Select City</label>
+            <input
+              type="text"
+              role="combobox"
+              aria-expanded={cityDropdownOpen}
+              aria-controls={cityDropdownOpen ? 'city-options' : undefined}
+              value={citySearch}
+              onChange={e => { setCitySearch(e.target.value); setCityDropdownOpen(true); }}
+              onFocus={() => setCityDropdownOpen(true)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') setCityDropdownOpen(false);
+                if (e.key === 'Enter' && filteredCities.length === 1) selectCity(filteredCities[0]);
+              }}
+              placeholder={cityName ? cityName : 'Search city…'}
+              disabled={isMonitoring}
+              className="w-full h-11 px-3 bg-white border border-[var(--border)] rounded-[var(--radius-sm)] text-sm font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-light)] disabled:bg-[var(--bg-secondary)]"
+            />
+            {cityName && <p className="text-xs text-[var(--accent)] mt-1">Measuring from {cityName}</p>}
+            {cityDropdownOpen && (
+              <ul id="city-options" role="listbox" className="absolute z-30 w-full mt-1 max-h-56 overflow-auto bg-white border border-[var(--border)] rounded-[var(--radius-sm)] shadow-lg">
+                {filteredCities.length === 0 ? (
+                  <li className="px-3 py-2.5 text-xs text-[var(--text-tertiary)]">No city matches “{citySearch}”</li>
+                ) : filteredCities.map(city => (
+                  <li key={city} role="option" aria-selected={city === cityName}
+                    onClick={() => selectCity(city)}
+                    className={`px-3 py-2 text-sm cursor-pointer hover:bg-[var(--bg-secondary)] ${city === cityName ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>
+                    {city}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
         <div className="mt-4 pt-4 border-t border-[var(--border-light)]">
@@ -453,7 +489,7 @@ export default function QasrMap() {
           </div>
           <h2 className="text-base font-semibold text-[var(--text-primary)] mb-1.5">Check Your Traveler Status</h2>
           <p className="text-sm text-[var(--text-secondary)] max-w-sm mx-auto">
-            Use your current location or select a city to see the 'Urf boundary and determine if you are a Traveler (Qasr) or Resident (Tamam).
+            Select a city from the list to see its boundaries (City Boundary, legal limits, Hadd) and your traveler status. Use your current location to see where you are relative to the city you measure from.
           </p>
         </div>
       )}

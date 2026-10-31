@@ -1013,6 +1013,12 @@ export function getUrfBoundary(cityName) {
   return null;
 }
 
+export function getBundledCities() {
+  return loadedBoundaries
+    ? Object.keys(loadedBoundaries)
+    : Object.keys(URBAN_BOUNDARIES);
+}
+
 /**
  * Get all supported cities (official bundle + user-contributed from cache).
  */
