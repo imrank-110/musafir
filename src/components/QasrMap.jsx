@@ -313,7 +313,7 @@ export default function QasrMap() {
             />
             {cityName && <p className="text-xs text-[var(--accent)] mt-1">Measuring from {cityName}</p>}
             {cityDropdownOpen && (
-              <ul id="city-options" role="listbox" className="absolute z-30 w-full mt-1 max-h-56 overflow-auto bg-white border border-[var(--border)] rounded-[var(--radius-sm)] shadow-lg">
+              <ul id="city-options" role="listbox" className="absolute z-[1000] w-full mt-1 max-h-56 overflow-auto bg-white border border-[var(--border)] rounded-[var(--radius-sm)] shadow-lg">
                 {filteredCities.length === 0 ? (
                   <li className="px-3 py-2.5 text-xs text-[var(--text-tertiary)]">No city matches “{citySearch}”</li>
                 ) : filteredCities.map(city => (
@@ -344,7 +344,7 @@ export default function QasrMap() {
       {/* Map + Sidebar */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
-          <div className="bg-white border border-[var(--border)] rounded-[var(--radius-lg)] shadow-[var(--shadow-sm)] overflow-hidden" style={{ height: '420px' }}>
+          <div className="relative z-0 bg-white border border-[var(--border)] rounded-[var(--radius-lg)] shadow-[var(--shadow-sm)] overflow-hidden" style={{ height: '420px' }}>
             <MapContainer center={location ? [location.lat, location.lng] : [29.7604, -95.3698]} zoom={10} style={{ height: '100%', width: '100%' }} zoomControl={false}>
               <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
               <MapController center={location ? [location.lat, location.lng] : null} zoom={10} />
