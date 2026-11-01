@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
 
-/** Select a bundled city through the searchable combobox. */
+/** Select a bundled city through the checker's searchable combobox. */
 async function selectCityViaSearch(page, name) {
-  const search = page.locator('input[role="combobox"]').first();
+  const search = page.locator('input[data-testid="city-search"]');
   await search.click();
   await search.fill(name);
   await page.getByRole('option', { name, exact: true }).click();
@@ -26,7 +26,7 @@ test.describe('Qasr Status Checker', () => {
   });
 
   test('city search dropdown is present', async ({ page }) => {
-    const search = page.locator('input[role="combobox"]').first();
+    const search = page.locator('input[data-testid="city-search"]');
     await expect(search).toBeVisible();
     await search.click();
     await expect(page.getByRole('option', { name: 'Houston', exact: true })).toBeVisible();
@@ -61,7 +61,7 @@ test.describe('Qasr Status Checker', () => {
 
   test('legend items are visible on map area', async ({ page }) => {
     await expect(page.locator('text=City Boundary').first()).toBeVisible();
-    await expect(page.locator('text=Hadd (22 km)').first()).toBeVisible();
+    await expect(page.locator('text=8 farsakhs (22 km)').first()).toBeVisible();
   });
 
   test('can select a city from dropdown', async ({ page }) => {

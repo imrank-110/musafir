@@ -828,6 +828,16 @@ function pointInPolygon(point, polygon) {
   return inside;
 }
 
+/**
+ * True when [lat, lng] sits inside the city's 'urf boundary; null when the
+ * city has no boundary data yet (bundled list or user cache).
+ */
+export function isPointInCity(lat, lng, cityName) {
+  const city = getUrfBoundary(cityName);
+  if (!city || !Array.isArray(city.boundary) || city.boundary.length === 0) return null;
+  return pointInPolygon([lat, lng], city.boundary);
+}
+
 // ─── Distance Calculations ───────────────────────────────────────────────────
 
 export function haversineDistance(lat1, lng1, lat2, lng2) {

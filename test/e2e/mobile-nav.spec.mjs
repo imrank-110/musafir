@@ -3,10 +3,11 @@ import { test, expect } from '@playwright/test';
 test.describe('Mobile Navigation (Bottom Tab Bar)', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('top nav with Flight/Qasr tabs is visible on mobile', async ({ page }) => {
+  test('top nav with Flight/Qasr/Settings tabs is visible on mobile', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('text=Flight').first()).toBeVisible();
     await expect(page.locator('text=Qasr').first()).toBeVisible();
+    await expect(page.locator('text=Settings').first()).toBeVisible();
   });
 
   test('mobile top nav Flight shows Flight content', async ({ page }) => {
@@ -44,6 +45,13 @@ test.describe('Mobile Navigation (Bottom Tab Bar)', () => {
     // Check an SVG exists for the logo
     const svgCount = await page.locator('svg').count();
     expect(svgCount).toBeGreaterThanOrEqual(1);
+  });
+
+  test('mobile top nav Settings shows Settings content', async ({ page }) => {
+    await page.goto('/');
+    await page.locator('button:has-text("Settings")').first().click();
+    await page.waitForTimeout(300);
+    await expect(page.getByRole('heading', { name: 'Your Hometowns (Watan)' })).toBeVisible();
   });
 
   test('footer attribution is visible on mobile', async ({ page }) => {

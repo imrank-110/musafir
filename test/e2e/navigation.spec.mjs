@@ -6,6 +6,7 @@ test.describe('Navigation & App Shell', () => {
     await expect(page.locator('text=Musafir').first()).toBeVisible();
     await expect(page.locator('text=Flight').first()).toBeVisible();
     await expect(page.locator('text=Qasr').first()).toBeVisible();
+    await expect(page.locator('text=Settings').first()).toBeVisible();
   });
 
   test('Flight tab is active by default', async ({ page }) => {
@@ -29,6 +30,14 @@ test.describe('Navigation & App Shell', () => {
     await page.goto('/');
     const svg = page.locator('nav svg, .glass-nav svg').first();
     await expect(svg).toBeVisible();
+  });
+
+  test('clicking Settings tab switches to Settings view', async ({ page }) => {
+    await page.goto('/');
+    await page.locator('button:has-text("Settings")').first().click();
+    await expect(page.getByRole('heading', { name: 'Your Hometowns (Watan)' })).toBeVisible();
+    // Qasr content should not be visible
+    await expect(page.locator('text=Qasr Status Checker')).not.toBeVisible();
   });
 
   test('footer attribution text is present', async ({ page }) => {

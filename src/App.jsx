@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import FlightTracker from './components/FlightTracker';
 import QasrMap from './components/QasrMap';
+import SettingsTab from './components/SettingsTab';
 import CrescentMoon from './components/CrescentMoon';
 
 function App() {
@@ -45,13 +46,26 @@ function App() {
           >
             Qasr
           </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            style={{
+              padding: '0.35rem 1rem', borderRadius: '100px', border: 'none', cursor: 'pointer',
+              fontSize: '0.8rem', fontWeight: 500, fontFamily: 'var(--font-body)',
+              background: activeTab === 'settings' ? '#fff' : 'transparent',
+              color: activeTab === 'settings' ? 'var(--color-ink)' : 'var(--color-muted)',
+              boxShadow: activeTab === 'settings' ? '0 1px 4px rgba(0,0,0,0.06)' : 'none',
+              transition: 'all 0.2s',
+            }}
+          >
+            Settings
+          </button>
         </div>
       </nav>
 
       {/* ── Content ── */}
       <main style={{ maxWidth: '1120px', margin: '0 auto', padding: '1.5rem 1rem' }}>
         <div className="fade-in">
-          {activeTab === 'flight' ? <FlightTracker /> : <QasrMap />}
+          {activeTab === 'flight' ? <FlightTracker /> : activeTab === 'qasr' ? <QasrMap /> : <SettingsTab />}
         </div>
       </main>
 
@@ -79,6 +93,17 @@ function App() {
             <path d="M2 12h20" />
           </svg>
           <span>Qasr</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={`bottom-nav-item${activeTab === 'settings' ? ' active' : ''}`}
+          style={{ background: 'none', border: 'none', fontFamily: 'var(--font-body)' }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.09a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.09a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          <span>Settings</span>
         </button>
       </div>
 

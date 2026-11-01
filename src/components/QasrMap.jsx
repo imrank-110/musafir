@@ -20,7 +20,10 @@ import {
   loadBoundaries,
   loadLegalBoundaries,
   getLegalBoundary,
+  isPointInCity,
 } from '../utils/geoUtils';
+
+import { loadUserSettings } from '../utils/userSettings';
 
 // ΓöÇΓöÇΓöÇ Map Icons ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
@@ -120,10 +123,64 @@ export default function QasrMap() {
   const watchIdRef = useRef(null);
   const prevStatusRef = useRef(null);
   const cityDropdownRef = useRef(null);
-  const supportedCities = getBundledCities();
+  const supportedCities = useMemo(() => getBundledCities(), []);
+  // User profile from the Settings tab: hometown (Watan) list + frequent
+  // traveller (Katheer al-Safar) flag. These only ever resolve a verdict toward
+  // "Not a traveller" — they never force Qasr.
+  const [settings] = useState(loadUserSettings);
+  const settingsData = settings ? settings.settings : null;
+  const watans = useMemo(() => settingsData?.watans || [], [settingsData]);
+  const frequentTraveler = settingsData?.frequentTraveler === 'yes';
   const filteredCities = citySearch
     ? supportedCities.filter(city => city.toLowerCase().includes(citySearch.toLowerCase()))
     : supportedCities;
+
+  // Is the user's current location inside any of their saved Watan(s)?
+  // isPointInCity returns true/false when boundary data exists, or null when
+  // the city isn't resolvable (non-bundled hometown with no boundary yet).
+  const watanCheck = useMemo(() => {
+    if (!location || watans.length === 0) return { inWatan: null, unresolved: [] };
+    const unresolved = [];
+    for (const w of watans) {
+      const inside = isPointInCity(location.lat, location.lng, w);
+      if (inside === true) return { inWatan: w, unresolved };
+      if (inside === null) unresolved.push(w);
+    }
+    return { inWatan: null, unresolved };
+  }, [location, watans]);
+
+  // The verdict card above the Driving Monitor: Traveller / Not a traveller.
+  const verdict = useMemo(() => {
+    if (watanCheck.inWatan) {
+      return {
+        label: 'not-traveller',
+        reason: `You are currently inside your hometown (Watan): ${watanCheck.inWatan}. While you are in your Watan you are a resident and pray in full (Tamam), even if you have just returned from a journey.`,
+      };
+    }
+    if (frequentTraveler) {
+      return {
+        label: 'not-traveller',
+        reason: "You have marked yourself as a frequent traveller (Katheer al-Safar). Per Ayatollah Sistani's ruling, a frequent traveller prays in full (Tamam) on their routine journeys rather than Qasr. For journeys outside that routine (e.g., a pure leisure trip), the normal traveller rules apply — please confirm with the authority you follow.",
+      };
+    }
+    if (!qasrStatus) return null;
+    if (qasrStatus.status === 'traveler') {
+      return {
+        label: 'traveller',
+        reason: `You have crossed the Hadd al-Tarakhkhus of ${qasrStatus.cityName || 'your measuring city'} — the traveller's rules begin at the Hadd, not at a distance marker. With a journey of 8 farsakhs or more (standard assumption), you pray Qasr (2 rak'ahs).`,
+      };
+    }
+    if (qasrStatus.detail === 'inside-urf') {
+      return { label: 'not-traveller', reason: 'You are inside the city boundary — you have not left the town. Pray in full (Tamam).' };
+    }
+    if (qasrStatus.detail === 'before-hadd') {
+      return { label: 'not-traveller', reason: `You have left the city edge but are still within the Hadd al-Tarakhkhus (${qasrStatus.haddDistance || HADD_AL_TARAKHKHUS_KM} km) — you only become a traveller once you cross it. Pray in full (Tamam).` };
+    }
+    if (qasrStatus.detail === 'past-hadd-but-short-journey') {
+      return { label: 'not-traveller', reason: 'You have crossed the Hadd al-Tarakhkhus, but a journey under 8 farsakhs does not qualify for Qasr. Pray in full (Tamam).' };
+    }
+    return { label: 'unknown', reason: qasrStatus.message || '' };
+  }, [watanCheck, frequentTraveler, qasrStatus]);
 
   useEffect(() => () => { if (watchIdRef.current !== null) Geolocation.clearWatch({ id: watchIdRef.current }); }, []);
 
@@ -210,15 +267,23 @@ export default function QasrMap() {
   const processLocation = useCallback(async (latitude, longitude) => {
     setLocation({ lat: latitude, lng: longitude }); setIsLoading(false);
     // Location never selects or generates a city — it only shows the user's
-    // position relative to the city they chose from the accurate city list.
+    // position relative to the city they chose (or a saved Watan, if their
+    // location falls inside one).
     if (!cityName) {
+      const watanInside = (watans || []).find(w => isPointInCity(latitude, longitude, w) === true);
+      if (watanInside) {
+        setError('');
+        setQasrStatus(null);
+        setDetectedCityName(`Location set — you are inside your Watan (${watanInside}). Pray in full (Tamam).`);
+        return;
+      }
       setDetectedCityName('Select a city from the list first — your location is measured against that city.');
       return;
     }
     setError('');
     setQasrStatus(applyLocationStatus(latitude, longitude, cityName));
     setDetectedCityName(`Location set — measured against ${cityName}.`);
-  }, [cityName, applyLocationStatus]);
+  }, [cityName, applyLocationStatus, watans]);
 
   const getCurrentLocation = useCallback(async () => {
     setIsLoading(true); setError('');
@@ -283,6 +348,13 @@ export default function QasrMap() {
         <p className="text-sm text-[var(--text-secondary)] mt-1">Determine your traveler status based on Ayatollah Sistani's rulings</p>
       </div>
 
+      {/* Settings hint */}
+      {!settings && (
+        <div className="flex items-center gap-2 bg-[var(--accent-light)] border border-[var(--accent)]/20 rounded-[var(--radius-md)] px-4 py-3 mb-5">
+          <p className="text-xs text-[var(--text-secondary)]">Tip: add your hometowns (Watan) and frequent-traveller status in the Settings tab — the verdict accounts for them.</p>
+        </div>
+      )}
+
       {/* Controls Card */}
       <div className="bg-white border border-[var(--border)] rounded-[var(--radius-lg)] shadow-[var(--shadow-sm)] p-5 mb-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -298,6 +370,7 @@ export default function QasrMap() {
             <input
               type="text"
               role="combobox"
+              data-testid="city-search"
               aria-expanded={cityDropdownOpen}
               aria-controls={cityDropdownOpen ? 'city-options' : undefined}
               value={citySearch}
@@ -387,7 +460,7 @@ export default function QasrMap() {
               <button onClick={() => setShowLegalExplainer(!showLegalExplainer)}
                 className="w-5 h-5 rounded-full bg-transparent hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center justify-center text-[11px] font-semibold leading-none" title="What are the legal city limits?">ℹ</button>
             </span>
-            <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: boundaryType === 'one-way' ? '#f97316' : '#6b7280', opacity: boundaryType === 'one-way' ? 0.5 : 0.4 }} /><span>{boundaryType === 'one-way' ? 'Hadd (44 km)' : 'Hadd (22 km)'}</span></div>
+            <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]"><div className="w-3 h-3 rounded" style={{ background: boundaryType === 'one-way' ? '#f97316' : '#6b7280', opacity: boundaryType === 'one-way' ? 0.5 : 0.4 }} /><span>{boundaryType === 'one-way' ? '8 farsakhs (44 km)' : '8 farsakhs (22 km)'}</span></div>
             {boundaryInfo && boundaryInfo.kind !== 'none' && (
               <div className={`px-1.5 py-0.5 rounded-[var(--radius-sm)] text-[11px] font-medium border ${boundaryInfo.kind === 'osm' ? 'bg-[var(--accent-light)] text-[var(--accent)] border-transparent' : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)] border-[var(--border)]'}`} title={`Boundary data source: ${boundaryInfo.kind}`}>
                 {boundaryInfo.kind === 'osm' ? 'Built-up · Census 2020' : boundaryInfo.kind === 'generated' ? 'Generated' : 'Approximate'}
@@ -435,22 +508,28 @@ export default function QasrMap() {
 
         {/* Sidebar */}
         <div className="space-y-3">
-          {qasrStatus && (
-            <div className={`bg-white border rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] p-5 ${qasrStatus.status === 'traveler' ? 'border-[var(--accent)]/40' : qasrStatus.status === 'resident' ? 'border-[var(--border)]' : 'border-[var(--border)]'}`}>
-              <p className={`text-sm font-semibold mb-1 ${qasrStatus.status === 'traveler' ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>
-                {qasrStatus.status === 'traveler' ? 'Traveler' : qasrStatus.status === 'resident' ? 'Resident' : 'Transition Zone'}
+          {/* Verdict — Traveller / Not a traveller, above the Driving Monitor */}
+          {verdict && (
+            <div data-testid="verdict-card" className={`bg-white border rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] p-5 ${verdict.label === 'traveller' ? 'border-[var(--accent)]/40' : 'border-[var(--border)]'}`}>
+              <p className={`text-sm font-semibold mb-1 ${verdict.label === 'traveller' ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>
+                {verdict.label === 'traveller' ? 'Traveller' : 'Not a traveller'}
               </p>
-              <p className="text-xs text-[var(--text-secondary)] mb-3">{qasrStatus.message}</p>
-              <div className="text-xs text-[var(--text-tertiary)] space-y-0.5">
-                {qasrStatus.cityName && <div>City: <span className="text-[var(--text-secondary)]">{qasrStatus.cityName}</span></div>}
-                {qasrStatus.distanceKm != null && <div>Distance from boundary: <span className="text-[var(--text-secondary)]">{Math.abs(qasrStatus.distanceKm).toFixed(1)} km</span></div>}
-                <div>Hadd al-Tarakhkhus: <span className="text-[var(--text-secondary)]">{qasrStatus.haddDistance || HADD_AL_TARAKHKHUS_KM} km</span></div>
-                {qasrStatus.detail === 'inside-urf' && <div className="text-[var(--text-secondary)]">Inside the 'Urf boundary ⟶ Resident (Tamam)</div>}
-                {qasrStatus.detail === 'before-hadd' && <div className="text-[var(--text-secondary)]">Left the 'Urf but still within the Hadd al-Tarakhkhus ⟶ Resident</div>}
-                {qasrStatus.detail === 'past-hadd-but-short-journey' && <div className="text-[var(--text-secondary)]">Past the Hadd but the journey is under 8 farsakhs ⟶ Resident</div>}
-                {qasrStatus.detail === 'traveler' && <div className="text-[var(--accent)]">Past the Hadd + journey is 8+ farsakhs ⟶ Traveler (Qasr)</div>}
-                {distanceToHadd != null && <div>To Hadd: <span className={distanceToHadd < 0 ? 'text-[var(--text-secondary)]' : 'text-[var(--accent)]'}>{distanceToHadd < 0 ? `${Math.abs(distanceToHadd).toFixed(1)} km` : `${distanceToHadd.toFixed(1)} km past`}</span></div>}
-              </div>
+              <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">{verdict.reason}</p>
+              {qasrStatus && (
+                <div className="text-xs text-[var(--text-tertiary)] space-y-0.5 border-t border-[var(--border-light)] pt-3 mt-3">
+                  {qasrStatus.cityName && <div>City: <span className="text-[var(--text-secondary)]">{qasrStatus.cityName}</span></div>}
+                  {qasrStatus.distanceKm != null && <div>Distance from boundary: <span className="text-[var(--text-secondary)]">{Math.abs(qasrStatus.distanceKm).toFixed(1)} km</span></div>}
+                  <div>Hadd al-Tarakhkhus: <span className="text-[var(--text-secondary)]">{qasrStatus.haddDistance || HADD_AL_TARAKHKHUS_KM} km</span></div>
+                  {distanceToHadd != null && <div>To Hadd: <span className={distanceToHadd < 0 ? 'text-[var(--text-secondary)]' : 'text-[var(--accent)]'}>{distanceToHadd < 0 ? `${Math.abs(distanceToHadd).toFixed(1)} km` : `${distanceToHadd.toFixed(1)} km past`}</span></div>}
+                </div>
+              )}
+            </div>
+          )}
+
+          {watanCheck.unresolved.length > 0 && (
+            <div className="bg-[var(--accent-light)] border border-[var(--accent)]/20 rounded-[var(--radius-md)] p-4">
+              <p className="text-xs font-semibold text-[var(--accent)] mb-1">Can't verify your Watan</p>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">We could not load boundary data for {watanCheck.unresolved.join(', ')} to check whether you are inside it. Until it loads, please follow the ruling of the authority you follow.</p>
             </div>
           )}
 
@@ -476,7 +555,7 @@ export default function QasrMap() {
       </div>
 
       {/* Empty State */}
-      {!qasrStatus && !error && (
+      {!qasrStatus && !error && !verdict && (
         <div className="text-center py-16">
           <div className="flex justify-center mb-5">
             <div className="w-12 h-12 rounded-full bg-[var(--accent-light)] flex items-center justify-center">
